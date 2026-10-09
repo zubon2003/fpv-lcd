@@ -66,5 +66,5 @@
 
 - 2026-10-10 から作者はユーザーの git 設定（zubon2003）。それ以前は中立名 `fpv-lcd <fpv-lcd@localhost>`。
 - ゲインの既定は 25（ユーザー指定）。
-- GitHub にはまだ push していない。push はユーザーに確認してから。
+- GitHub：https://github.com/zubon2003/fpv-lcd（公開、ブランチ `main`。bundle の `master` を改名）。push はユーザーに確認してから。
 - ライセンスは ESP-SDR に合わせて GPL-3.0。
