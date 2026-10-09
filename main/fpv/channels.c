@@ -27,7 +27,19 @@ fpv_channel_t fpv_channel(int band, int number) {
 }
 
 int fpv_channel_parse(const char *name, fpv_channel_t *out) {
-    if (!name || !name[0] || !name[1] || name[2]) return -1;
+    if (!name || !name[0] || !name[1]) return -1;
+    if (isdigit((unsigned char)name[0])) {
+        int f = 0, i = 0;
+        for (; name[i] && i < 5; i++) {
+            if (!isdigit((unsigned char)name[i])) return -1;
+            f = f * 10 + (name[i] - '0');
+        }
+        if (name[i] || f < 5000 || f > 6000) return -1;
+        snprintf(out->name, sizeof(out->name), "%d", f);
+        out->freq_mhz = f;
+        return 0;
+    }
+    if (name[2]) return -1;
     char b = (char)toupper((unsigned char)name[0]);
     int n = name[1] - '0';
     for (int i = 0; i < FPV_NUM_BANDS; i++) {

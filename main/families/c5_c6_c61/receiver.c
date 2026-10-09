@@ -274,6 +274,9 @@ void sdr_hw_gain(int index) {
     gain_apply();
 }
 int sdr_hw_gain_max(void) { return (int)gain_max(); }
+/* One line of the stock ESP-SDR protocol (FREQ, CAP20, GAIN, ...), replied
+ * on the serial port it came from. */
+void sdr_hw_command(char *line) { handle_command(line); }
 bool sdr_hw_capture(unsigned n, const uint32_t **iq) {
     unsigned us;
     if(n<256)n=256;
@@ -382,7 +385,12 @@ static void handle_command(char *line) {
         else if(sscanf(line,"ADCCLOCK %u %c",&n,&extra)==1 && (n<2 || n==4)) {probe_adc=n;reply("OK\n");}
 #endif
         else if(!strcmp(line,"CAPS")) {
+#if FPV_LCD_MONITOR
+            /* no on-chip SPEC in this build; FPVSTREAM: see main/fpv/link.h */
+            reply("CAPS VERSION GPIO UARTBAUD RXLIMITS GAIN HWAGC IQ8 SERIALLEASE FPVSTREAM"
+#else
             reply("CAPS VERSION GPIO SPEC SPECN SPECCAPS SPECSTAT DCT UARTBAUD RXLIMITS GAIN HWAGC IQ8 SERIALLEASE"
+#endif
                   " TUNEEXT"
 #if !CONFIG_IDF_TARGET_ESP32C6
                   " LPF LPF12"

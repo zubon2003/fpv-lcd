@@ -71,6 +71,7 @@ const char *mode_label(Mode m) {
     switch (m) {
     case MODE_4CH: return "4CH";
     case MODE_3CH: return "3CH";
+    case MODE_PC: return "PC";
     default: return "1CH";
     }
 }

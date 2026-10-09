@@ -19,11 +19,12 @@ constexpr int RO_Y = 178, RO_H = 62;
 constexpr int COLS = SCR_W;
 constexpr int MAX_CH = 4;
 
-enum Mode : uint8_t { MODE_4CH = 0, MODE_3CH, MODE_1CH, MODE_COUNT };
+/* MODE_PC: a span and channels set over USB ("FPV SPAN"); not stored. */
+enum Mode : uint8_t { MODE_4CH = 0, MODE_3CH, MODE_1CH, MODE_COUNT, MODE_PC = MODE_COUNT };
 const char *mode_label(Mode m);
 
 struct UiChannel {
-    char name[4];
+    char name[8];
     int nominal_mhz;
     int color;              /* colour slot 0..5 */
     an_meas_t m;

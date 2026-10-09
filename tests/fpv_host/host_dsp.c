@@ -11,6 +11,7 @@
 #include <string.h>
 #include "analysis.h"
 #include "dsp.h"
+#include "link.h"
 
 static uint32_t *read_words(const char *path, size_t *count) {
     FILE *f = fopen(path, "rb");
@@ -26,8 +27,17 @@ static uint32_t *read_words(const char *path, size_t *count) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 4) return 1;
     dsp_init();
+    if (argc == 3 && !strcmp(argv[1], "parse")) {
+        static const char *const single[] = {"E2", "E1", "F1", "F3", "F4", "F5"};
+        fpv_cmd_t c;
+        fpv_cmd_kind_t k = fpv_parse(argv[2], single, 6, &c);
+        printf("kind=%d ival=%d start=%.3f stop=%.3f nch=%d", (int)k, c.ival, c.start, c.stop, c.nch);
+        for (int i = 0; i < c.nch; i++) printf(" %s@%d", c.ch[i].name, c.ch[i].freq_mhz);
+        printf(" err=%s\n", c.err ? c.err : "");
+        return 0;
+    }
+    if (argc < 4) return 1;
     size_t count;
     uint32_t *iq = read_words(argv[2], &count);
     unsigned n = (unsigned)atoi(argv[3]);
@@ -35,6 +45,13 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[1], "psd")) {
         dsp_hop_psd(iq, n, psd);
         fwrite(psd, sizeof(float), DSP_NFFT, stdout);
+        return 0;
+    }
+    if (!strcmp(argv[1], "encode")) {
+        int nb = atoi(argv[3]);
+        uint16_t *codes = malloc(sizeof(uint16_t) * (size_t)nb);
+        fpv_encode((const float *)iq, nb, codes);
+        fwrite(codes, sizeof(uint16_t), (size_t)nb, stdout);
         return 0;
     }
     if (!strcmp(argv[1], "mean") && argc >= 5) {

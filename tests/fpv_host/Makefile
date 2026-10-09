@@ -1,12 +1,12 @@
 FPV := ../../main/fpv
 CFLAGS ?= -O2 -Wall -Wextra -std=c11 -I$(FPV)
 
-host_dsp: host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/dsp.h $(FPV)/analysis.h
-	$(CC) $(CFLAGS) -o $@ host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c -lm
+host_dsp: host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/link.c $(FPV)/link.h $(FPV)/dsp.h $(FPV)/analysis.h
+	$(CC) $(CFLAGS) -o $@ host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/link.c -lm
 
 # The first (64-bit) FFT, kept for comparison.
-host_dsp_ref: host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/dsp.h $(FPV)/analysis.h
-	$(CC) $(CFLAGS) -DFPV_FFT_REF -o $@ host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c -lm
+host_dsp_ref: host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/link.c $(FPV)/dsp.h $(FPV)/analysis.h
+	$(CC) $(CFLAGS) -DFPV_FFT_REF -o $@ host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/link.c -lm
 
 clean:
 	rm -rf host_dsp host_dsp_ref host_ui obj iq.bin sweep.bin *.ppm
@@ -26,4 +26,4 @@ obj/%.o: $(LGFX)/%
 
 host_ui: host_ui.cpp $(FPV)/ui.cpp $(FPV)/ui.hpp $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(LGFX_OBJS)
 	$(CXX) -O1 -std=gnu++17 -DLGFX_LINUX_FB -I$(LGFX) -I$(FPV) -o $@ host_ui.cpp $(FPV)/ui.cpp \
-	  -x c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c -x none $(LGFX_OBJS) -lm -lpthread
+	  -x c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/link.c -x none $(LGFX_OBJS) -lm -lpthread

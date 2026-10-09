@@ -18,6 +18,9 @@ int sdr_hw_gain_max(void);
  * pointer stays valid until the next capture. */
 bool sdr_hw_capture(unsigned n, const uint32_t **iq);
 
+/* Hand one stock ESP-SDR protocol line to the firmware's own handler. */
+void sdr_hw_command(char *line);
+
 /* First thing in app_main: deep-sleeps instead of starting on a flat battery. */
 void fpv_monitor_early(void);
 /* Entry point of the monitor; called from app_main, never returns. */

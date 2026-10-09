@@ -19,7 +19,9 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
+#include "esp_rom_crc.h"
 #include "driver/gpio.h"
 #include "esp_attr.h"
 #include "esp_sleep.h"
@@ -27,6 +29,10 @@
 
 #include "analysis.h"
 #include "battery.h"
+#include "link.h"
+extern "C" {
+#include "burst_serial.h"
+}
 #include "channels.h"
 #include "dsp.h"
 #include "fpv_config.h"
@@ -101,7 +107,7 @@ static Renderer s_ui;
 static bool s_have_psram;
 
 /* ------------------------------------------------------------- settings */
-/* 1CH: the triangle buttons step through these, in this order. */
+/* 1CH: the triangle buttons (and "FPV CH") step through these, in this order. */
 static const char *const SINGLE_CHANNELS[] = {"E2", "E1", "F1", "F3", "F4", "F5"};
 constexpr int NUM_SINGLE = sizeof(SINGLE_CHANNELS) / sizeof(SINGLE_CHANNELS[0]);
 
@@ -250,12 +256,115 @@ static bool battery_low(int mv, int limit) {
 static float *s_work;
 static float *s_psd;
 
+/* ------------------------------------------------------------- USB link */
+
+static QueueHandle_t s_pc_q;                /* receiver -> UI: settings from the PC */
+static bool s_stream;                       /* SWEEP frames on */
+static uint32_t s_stream_seq;
+static uint16_t *s_codes;                   /* frame payload */
+static volatile bool s_raw;                 /* PC drives the radio (ESP-SDR protocol) */
+static const char *mode_name(int m) { return m == MODE_4CH ? "4CH" : m == MODE_3CH ? "3CH" : m == MODE_1CH ? "1CH" : "PC"; }
+static volatile int s_shown_mode;           /* what the LCD runs, for STATE? */
+
+static void link_reply(const char *s) { burst_serial_send(s, strlen(s)); }
+
+/* Everything or nothing within the deadline; a host that stopped reading
+ * turns streaming off instead of stalling the receiver. */
+static bool link_send(const void *data, size_t n, int64_t deadline) {
+    const uint8_t *p = (const uint8_t *)data;
+    while (n) {
+        size_t done = burst_serial_try_send(p, n);
+        p += done;
+        n -= done;
+        if (n && esp_timer_get_time() > deadline) return false;
+    }
+    return true;
+}
+
+static void send_sweep(const sweep_plan_t &plan, const float *sweep, int64_t t_us) {
+    fpv_encode(sweep, plan.nbins, s_codes);
+    size_t bytes = sizeof(uint16_t) * plan.nbins;
+    uint32_t crc = esp_rom_crc32_le(0, (const uint8_t *)s_codes, bytes);
+    char h[96];
+    int n = snprintf(h, sizeof(h), "SWEEP %u %d %d %d %u %08x\n", (unsigned)++s_stream_seq, plan.start_mhz,
+                     plan.nbins, DSP_BIN_HZ, (unsigned)(t_us / 1000), (unsigned)crc);
+    int64_t deadline = esp_timer_get_time() + 300000;
+    if (!link_send(h, (size_t)n, deadline) || !link_send(s_codes, bytes, deadline)) s_stream = false;
+}
+
+static void fpv_command(const char *line, const sweep_plan_t &plan, int gain) {
+    fpv_cmd_t c;
+    char r[200];
+    switch (fpv_parse(line, SINGLE_CHANNELS, NUM_SINGLE, &c)) {
+    case FC_HELLO:
+        snprintf(r, sizeof(r), "FPV %d bin_hz=%d maxbins=%d step=%d usable=%.0f dc_khz=%.0f samples=%d\n",
+                 FPV_LINK_VERSION, DSP_BIN_HZ, SWEEP_MAX_BINS, FPV_STEP_MHZ, (double)FPV_USABLE_MHZ,
+                 (double)FPV_DC_KHZ, FPV_SAMPLES);
+        link_reply(r);
+        return;
+    case FC_STATE:
+        snprintf(r, sizeof(r), "STATE mode=%s ch=%s gain=%d snr=%d start=%d nbins=%d hops=%d stream=%d bat_mv=%d\n",
+                 mode_name(s_shown_mode), SINGLE_CHANNELS[s_set.single], gain, s_set.snr, plan.start_mhz,
+                 plan.nbins, plan.nhops, s_stream ? 1 : 0, (int)s_bat_mv);
+        link_reply(r);
+        return;
+    case FC_STREAM:
+        s_stream = c.ival != 0;
+        link_reply("OK\n");
+        return;
+    case FC_BAD:
+        snprintf(r, sizeof(r), "ERR %s\n", c.err);
+        link_reply(r);
+        return;
+    default:                                 /* settings: applied by the UI task */
+        if (xQueueSend(s_pc_q, &c, 0) == pdTRUE) link_reply("OK\n");
+        else link_reply("ERR busy\n");
+        return;
+    }
+}
+
+/* Serve the USB port. Returns true while the PC holds the radio with the
+ * ESP-SDR protocol (5 s lease after its last line, or until RELEASE). */
+static bool link_service(const sweep_plan_t &plan, int gain) {
+    static int64_t raw_until;
+    char line[160];
+    int st;
+    while ((st = burst_serial_poll_line(line, sizeof(line))) != 0) {
+        if (st < 0) { link_reply("ERR command_length\n"); continue; }
+        const char *t = line;
+        while (*t == ' ' || *t == '\r') t++;
+        if (!*t) continue;                   /* blank: hosts send one to resync */
+        fpv_cmd_t probe;
+        if (fpv_parse(line, SINGLE_CHANNELS, NUM_SINGLE, &probe) != FC_NONE) {
+            fpv_command(line, plan, gain);
+            continue;
+        }
+        sdr_hw_command(line);                /* stock protocol: the PC's own sweep */
+        raw_until = !strcmp(line, "RELEASE") ? 0 : esp_timer_get_time() + 5000000;
+    }
+    bool raw = raw_until && esp_timer_get_time() < raw_until;
+    if (!raw) raw_until = 0;
+    s_raw = raw;
+    return raw;
+}
+
 static void receiver_loop() {
     sdr_hw_bandwidth(0);                    /* widest analog filter */
     uint32_t gen = 0;
     int gain = -999;
+    bool was_raw = false;
     sweep_plan_t plan{};
     for (;;) {
+        if (link_service(plan, gain)) {        /* the PC has the radio */
+            was_raw = true;
+            vTaskDelay(1);
+            continue;
+        }
+        if (was_raw) {                         /* take it back: our filter and gain */
+            was_raw = false;
+            sdr_hw_bandwidth(0);
+            gain = -999;
+        }
         xSemaphoreTake(s_lock, portMAX_DELAY);
         if (s_req.gen != gen) { gen = s_req.gen; plan = s_req.plan; }
         int want_gain = s_req.gain;
@@ -286,6 +395,7 @@ static void receiver_loop() {
         bool aborted = false;
         for (int h = 0; h < plan.nhops; h++) {
             if (__atomic_load_n(&s_req.gen, __ATOMIC_RELAXED) != gen) { aborted = true; break; }   /* mode changed */
+            if (link_service(plan, gain)) { aborted = true; break; }                            /* PC took the radio */
             const uint32_t *iq = nullptr;
             if (!sdr_hw_tune((unsigned)plan.lo_mhz[h]) || !sdr_hw_capture(FPV_SAMPLES, &iq)) {
                 s_rx_errors++;
@@ -297,13 +407,15 @@ static void receiver_loop() {
         }
         if (aborted) continue;
 
+        int64_t t_done = esp_timer_get_time();
         xSemaphoreTake(s_lock, portMAX_DELAY);
         memcpy(s_shared, s_work, sizeof(float) * plan.nbins);
         s_shared_gen = gen;
         s_shared_seq++;
-        s_shared_t_us = esp_timer_get_time();
+        s_shared_t_us = t_done;
         xSemaphoreGive(s_lock);
         xTaskNotifyGive(s_ui_task);
+        if (s_stream) send_sweep(plan, s_work, t_done);
     }
 }
 
@@ -352,11 +464,25 @@ static void reset_measurement() {
     }
 }
 
+/* "FPV SPAN" from the PC: overrides the mode until a mode is chosen here. */
+struct PcSpan {
+    bool active;
+    float start, stop;
+    int n;
+    fpv_channel_t ch[MAX_CH];
+};
+static PcSpan s_pc;
+
 static void apply_settings() {
     Lineup l = lineup_for(s_set);
+    if (s_pc.active) {
+        l.n = s_pc.n;
+        for (int i = 0; i < l.n; i++) l.ch[i] = s_pc.ch[i];
+    }
     float lo = 1e9f, hi = -1e9f;
     int freqs[MAX_CH];
-    s_view.mode = (Mode)s_set.mode;
+    s_view.mode = s_pc.active ? MODE_PC : (Mode)s_set.mode;
+    s_shown_mode = s_view.mode;
     s_view.nch = l.n;
     for (int i = 0; i < l.n; i++) {
         UiChannel &c = s_view.ch[i];
@@ -367,7 +493,8 @@ static void apply_settings() {
         lo = fminf(lo, (float)c.nominal_mhz);
         hi = fmaxf(hi, (float)c.nominal_mhz);
     }
-    sweep_plan(&s_view.plan, lo - FPV_MARGIN_MHZ, hi + FPV_MARGIN_MHZ, FPV_STEP_MHZ);
+    if (s_pc.active) sweep_plan(&s_view.plan, s_pc.start, s_pc.stop, FPV_STEP_MHZ);
+    else sweep_plan(&s_view.plan, lo - FPV_MARGIN_MHZ, hi + FPV_MARGIN_MHZ, FPV_STEP_MHZ);
     s_st.search_mhz = an_auto_search(freqs, l.n, 8.0f);
     s_view.gain = s_set.gain;
     s_view.snr_db = s_set.snr;
@@ -397,8 +524,9 @@ static void set_gain_now(int gain) {
 /* Main screen taps (the setup screen is handled in ui_task). */
 static void on_hit(Hit hit) {
     switch (hit) {
-    case HIT_MODE:                       /* 4CH -> 3CH -> 1CH -> 4CH */
-        s_set.mode = (uint8_t)((s_set.mode + 1) % MODE_COUNT);
+    case HIT_MODE:                       /* 4CH -> 3CH -> 1CH -> 4CH; PC -> back to ours */
+        if (s_pc.active) s_pc.active = false;
+        else s_set.mode = (uint8_t)((s_set.mode + 1) % MODE_COUNT);
         apply_settings();
         s_ui.draw_all(s_view);
         settings_save();
@@ -425,12 +553,13 @@ static void calibrate_touch();
 
 /* ---------------------------------------------------------- setup screen */
 static Settings s_edit;          /* what the setup screen shows / edits */
+static bool s_edit_mode_set;     /* a mode button was pressed (leaves PC mode) */
 
 static SetupView setup_view() {
     SetupView sv;
     fpv_channel_t c;
     fpv_channel_parse(SINGLE_CHANNELS[s_edit.single], &c);
-    sv.mode = (Mode)s_edit.mode;
+    sv.mode = (s_pc.active && !s_edit_mode_set) ? MODE_PC : (Mode)s_edit.mode;
     sv.single_name = SINGLE_CHANNELS[s_edit.single];
     sv.single_mhz = c.freq_mhz;
     sv.gain = s_edit.gain;
@@ -442,9 +571,9 @@ static SetupView setup_view() {
 /* Returns true when the setup screen closes. */
 static bool on_setup_hit(SetupHit h) {
     switch (h) {
-    case SH_MODE_4: s_edit.mode = MODE_4CH; break;
-    case SH_MODE_3: s_edit.mode = MODE_3CH; break;
-    case SH_MODE_1: s_edit.mode = MODE_1CH; break;
+    case SH_MODE_4: s_edit.mode = MODE_4CH; s_edit_mode_set = true; break;
+    case SH_MODE_3: s_edit.mode = MODE_3CH; s_edit_mode_set = true; break;
+    case SH_MODE_1: s_edit.mode = MODE_1CH; s_edit_mode_set = true; break;
     case SH_CH_PREV: s_edit.single = (uint8_t)((s_edit.single + NUM_SINGLE - 1) % NUM_SINGLE); break;
     case SH_CH_NEXT: s_edit.single = (uint8_t)((s_edit.single + 1) % NUM_SINGLE); break;
     case SH_GAIN_DOWN:          /* AGC -> 60 -> ... -> 0 */
@@ -458,7 +587,9 @@ static bool on_setup_hit(SetupHit h) {
     case SH_CAL: calibrate_touch(); break;
     case SH_DONE: {
         bool replan = s_edit.mode != s_set.mode ||
-                      (s_edit.mode == MODE_1CH && s_edit.single != s_set.single);
+                      (s_edit.mode == MODE_1CH && s_edit.single != s_set.single) ||
+                      (s_pc.active && s_edit_mode_set);
+        if (s_edit_mode_set) s_pc.active = false;
         bool regain = s_edit.gain != s_set.gain;
         s_set = s_edit;
         settings_save();
@@ -563,6 +694,46 @@ static void calibrate_touch() {
     touch_cal_save(cal);
 }
 
+/* Settings sent over USB ("FPV MODE/CH/GAIN/SNR/SPAN"). True if any. */
+static bool apply_pc_commands() {
+    fpv_cmd_t c;
+    bool any = false;
+    while (xQueueReceive(s_pc_q, &c, 0) == pdTRUE) {
+        any = true;
+        switch (c.kind) {
+        case FC_MODE:
+            s_pc.active = false;
+            s_set.mode = (uint8_t)c.ival;
+            apply_settings();
+            break;
+        case FC_CH:
+            s_set.single = (uint8_t)c.ival;
+            if (s_set.mode == MODE_1CH && !s_pc.active) apply_settings();
+            break;
+        case FC_GAIN:
+            s_set.gain = (int8_t)c.ival;
+            set_gain_now(s_set.gain);
+            break;
+        case FC_SNR:
+            s_set.snr = (uint8_t)c.ival;
+            s_view.snr_db = s_set.snr;
+            break;
+        case FC_SPAN:
+            s_pc.active = true;
+            s_pc.start = c.start;
+            s_pc.stop = c.stop;
+            s_pc.n = c.nch;
+            for (int i = 0; i < c.nch; i++) s_pc.ch[i] = c.ch[i];
+            apply_settings();
+            break;
+        default:
+            break;
+        }
+        if (c.kind != FC_SPAN) settings_save();
+    }
+    return any;
+}
+
 static void ui_task(void *) {
     s_lcd.init();
     backlight(true);
@@ -626,6 +797,7 @@ static void ui_task(void *) {
     int64_t touch_t0 = 0, t_repeat = 0;
     Hit touch_hit = HIT_NONE;
     bool in_setup = false;                /* the setup screen is up */
+    bool raw_shown = false;
     SetupHit setup_touch = SH_NONE;
     /* Partial updates: the SPI transfer is most of the drawing cost, and the
      * CPU waits for it. Spectrum at most 10/s, waterfall when it gains a row,
@@ -654,6 +826,19 @@ static void ui_task(void *) {
             vTaskDelay(pdMS_TO_TICKS(3000));
             s_lcd.sleep();
             power_off();
+        }
+
+        int64_t now0 = esp_timer_get_time();
+        if (apply_pc_commands()) {               /* settings from the PC */
+            if (in_setup) { s_edit = s_set; s_ui.draw_setup(setup_view()); }
+            else { s_ui.draw_all(s_view); t_spec = t_ro = t_hdr = now0; }
+        }
+        /* the PC drives the radio with raw I/Q: say so on the plot */
+        if (s_raw != raw_shown) {
+            raw_shown = s_raw;
+            s_view.message = raw_shown ? "PC is using the receiver (I/Q)" : nullptr;
+            s_st.message_until_us = raw_shown ? INT64_MAX : 0;
+            if (!in_setup) s_ui.draw_spectrum(s_view);
         }
 
         int32_t tx, ty;
@@ -688,6 +873,7 @@ static void ui_task(void *) {
             if (touch_hit == HIT_SETUP) {
                 in_setup = true;
                 s_edit = s_set;
+                s_edit_mode_set = false;
                 s_ui.draw_setup(setup_view());
             } else {
                 if (touch_hit != HIT_PLOT) on_hit(touch_hit);
@@ -759,10 +945,13 @@ static void alloc_buffers() {
     s_hold = (float *)big_alloc(sizeof(float) * SWEEP_MAX_BINS);
     s_scratch = (uint32_t *)big_alloc(sizeof(uint32_t) * SWEEP_MAX_BINS);
     s_ring = (float *)big_alloc(sizeof(float) * SWEEP_MAX_BINS * FPV_AVG_SWEEPS);   /* 92 KB */
+    s_codes = (uint16_t *)big_alloc(sizeof(uint16_t) * SWEEP_MAX_BINS);
+    s_pc_q = xQueueCreate(8, sizeof(fpv_cmd_t));
     uint64_t *sum = (uint64_t *)big_alloc(sizeof(uint64_t) * SWEEP_MAX_BINS, true);
     uint8_t *cnt = (uint8_t *)big_alloc(SWEEP_MAX_BINS, true);
     void *v = big_alloc(sizeof(UiView));
-    if (!s_psd || !s_work || !s_shared || !s_avg || !s_hold || !s_scratch || !s_ring || !sum || !cnt || !v)
+    if (!s_psd || !s_work || !s_shared || !s_avg || !s_hold || !s_scratch || !s_ring || !sum || !cnt || !v ||
+        !s_codes || !s_pc_q)
         halt("out of memory");
     an_ring_init(&s_avg_ring, s_ring, sum, cnt, FPV_AVG_SWEEPS, SWEEP_MAX_BINS);
     s_viewp = new (v) UiView();
