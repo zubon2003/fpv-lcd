@@ -44,6 +44,21 @@ int main(int argc, char **argv) {
         fwrite(avg, sizeof(float), (size_t)nb, stdout);
         return 0;
     }
+    if (!strcmp(argv[1], "ring") && argc >= 6) {
+        int nb = atoi(argv[4]), depth = atoi(argv[5]);
+        float *frames = malloc(sizeof(float) * (size_t)nb * depth);
+        uint64_t *sum = malloc(sizeof(uint64_t) * (size_t)nb);
+        uint8_t *cnt = malloc((size_t)nb);
+        float *avg = malloc(sizeof(float) * (size_t)nb);
+        an_ring_t r;
+        an_ring_init(&r, frames, sum, cnt, depth, nb);
+        an_ring_reset(&r, nb);
+        for (unsigned f = 0; f < n; f++) {
+            an_ring_push(&r, (const float *)iq + (size_t)f * nb, avg);
+            fwrite(avg, sizeof(float), (size_t)nb, stdout);
+        }
+        return 0;
+    }
     if (strcmp(argv[1], "sweep") || argc < 10) return 1;
     sweep_plan_t p;
     if (sweep_plan(&p, (float)atof(argv[4]), (float)atof(argv[5]), atoi(argv[6]))) return 3;

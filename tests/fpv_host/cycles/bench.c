@@ -17,6 +17,8 @@ static float g_sweep[SWEEP_MAX_BINS];
 static float g_ring[AVG_N * SWEEP_MAX_BINS];
 static float g_avg[SWEEP_MAX_BINS];
 static uint32_t g_scratch[SWEEP_MAX_BINS];
+static uint64_t g_sum[SWEEP_MAX_BINS];
+static uint8_t g_cnt[SWEEP_MAX_BINS];
 static float g_cols[3][320];
 
 /* bump allocator for dsp_init */
@@ -46,9 +48,12 @@ int main(void) {
             dsp_hop_psd(g_iq, 2048, g_psd);
             sweep_stitch(&p, h, g_psd, g_sweep, 28.0f, 500.0f);
         }
-        for (int f = 0; f < AVG_N; f++) memcpy(g_ring + f * SWEEP_MAX_BINS, g_sweep, sizeof(float) * p.nbins);
+        an_ring_t ring;
+        an_ring_init(&ring, g_ring, g_sum, g_cnt, AVG_N, SWEEP_MAX_BINS);
+        an_ring_reset(&ring, p.nbins);
+        for (int f = 0; f < AVG_N; f++) an_ring_push(&ring, g_sweep, g_avg);   /* full ring */
         MARK(1);
-        an_mean_frames(g_avg, g_ring, SWEEP_MAX_BINS, AVG_N, p.nbins);
+        an_ring_push(&ring, g_sweep, g_avg);      /* evict one, add one */
         an_columns_db(g_sweep, p.nbins, 320, g_cols[0]);
         an_columns_lin(g_sweep, p.nbins, 320, g_cols[1]);
         an_columns_db(g_avg, p.nbins, 320, g_cols[2]);

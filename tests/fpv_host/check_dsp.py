@@ -149,9 +149,36 @@ def check_mean(nframes=10, nbins=2112):
     return d.max() < 0.01 and mism == 0
 
 
+def check_ring(nframes=40, nbins=2112, depth=10):
+    """Running 10-sweep mean = plain mean of the last 10, also after a strong
+    carrier leaves (where a floating running sum would drift)."""
+    lin = 10 ** rng.uniform(-9.5, -7, (nframes, nbins))
+    lin[:12, 900:960] = 10 ** rng.uniform(-2, -0.5, (12, 60))   # a VTX, then off
+    lin[rng.random((nframes, nbins)) < 0.03] = np.inf            # missed bins
+    lin[:, :5] = np.inf
+    (HERE / "iq.bin").write_bytes(lin.astype(np.float32).tobytes())
+    out = np.frombuffer(run("ring", "iq.bin", nframes, nbins, depth), np.float32).reshape(nframes, nbins)
+    worst, mism = 0.0, 0
+    for t in range(nframes):
+        win = lin[max(0, t - depth + 1):t + 1].astype(np.float32)
+        ok = np.isfinite(win)
+        cnt = ok.sum(axis=0)
+        ref = np.where(cnt > 0, np.where(ok, win, 0).sum(axis=0) / np.maximum(cnt, 1), np.inf)
+        both = np.isfinite(ref) & np.isfinite(out[t])
+        mism += int(np.sum(np.isfinite(ref) != np.isfinite(out[t])))
+        d = np.abs(10 * np.log10(out[t][both]) - 10 * np.log10(ref[both]))
+        worst = max(worst, float(d.max()))
+    last = lin[-depth:, 900:960]
+    ref_last = np.nanmean(np.where(np.isfinite(last), last, np.nan), axis=0)
+    after = np.abs(10 * np.log10(out[-1][900:960]) - 10 * np.log10(ref_last))
+    print(f"\nrunning 10-sweep mean ({nframes} pushes): max |C - numpy| = {worst:.5f} dB, "
+          f"gap mismatches {mism}; bins the VTX left: max {after.max():.5f} dB")
+    return worst < 0.01 and mism == 0
+
+
 def main():
     subprocess.run(["make", "-s", "-C", str(HERE), "host_dsp", "host_dsp_ref"], check=True)
-    results = [check_psd(), check_mean()]
+    results = [check_psd(), check_mean(), check_ring()]
     results.append(check_sweep("4CH", ["E2", "E1", "F3", "F5"],
                                [(5685.4, 0.20), (5704.2, 0.12), (5780.0, 0.30)]))
     results.append(check_sweep("3CH", ["E1", "F1", "F4"],

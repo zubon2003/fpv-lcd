@@ -243,6 +243,7 @@ static UiView *s_viewp;
 #define s_view (*s_viewp)
 static float *s_avg, *s_hold;
 static float *s_ring;          /* FPV_AVG_SWEEPS stored sweeps, SWEEP_MAX_BINS apart */
+static an_ring_t s_avg_ring;   /* their exact running mean */
 static uint32_t *s_scratch;
 static float s_row_lin[COLS];
 
@@ -251,7 +252,6 @@ struct UiState {
     uint32_t seen_seq = 0;
     int64_t last_t_us = 0;
     float period_s = 0;
-    int ring_head = 0, ring_count = 0;   /* stored sweeps for the average */
     bool hold_first = true;
     bool row_open = false;
     int64_t row_t_us = 0;
@@ -259,11 +259,12 @@ struct UiState {
     float search_mhz = 8;
     an_smooth_t smooth[MAX_CH];
     int64_t message_until_us = 0;
+    bool wf_dirty = false;        /* waterfall gained a row since drawn */
 };
 static UiState s_st;
 
 static void reset_measurement() {
-    s_st.ring_count = 0;
+    an_ring_reset(&s_avg_ring, s_view.plan.nbins);
     s_st.hold_first = true;
     s_st.row_open = false;
     s_st.row_t_us = 0;
@@ -351,7 +352,7 @@ static void on_hit(Hit hit) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_req.gain = s_set.gain;
         xSemaphoreGive(s_lock);
-        s_st.ring_count = 0;        /* new gain: restart the average */
+        an_ring_reset(&s_avg_ring, s_view.plan.nbins);   /* new gain: restart the average */
         s_st.hold_first = true;
     }
     settings_save();
@@ -371,10 +372,7 @@ static void ingest_locked(int64_t t_us) {
         s_st.period_s = s_st.period_s > 0 ? s_st.period_s + 0.1f * (dt - s_st.period_s) : dt;
 
     /* store this sweep in the ring and average the ones held */
-    memcpy(s_ring + (size_t)s_st.ring_head * SWEEP_MAX_BINS, s_shared, sizeof(float) * nb);
-    s_st.ring_head = (s_st.ring_head + 1) % FPV_AVG_SWEEPS;
-    if (s_st.ring_count < FPV_AVG_SWEEPS) s_st.ring_count++;
-    an_mean_frames(s_avg, s_ring, SWEEP_MAX_BINS, s_st.ring_count, nb);
+    an_ring_push(&s_avg_ring, s_shared, s_avg);
     if (s_view.hold_on) {
         an_peak_hold(s_hold, s_shared, nb, s_st.hold_first);
         s_st.hold_first = false;
@@ -397,6 +395,7 @@ static void ingest_locked(int64_t t_us) {
         for (int x = 0; x < COLS; x++)
             s_view.wf[s_view.wf_head][x] = wf_code(dsp_valid(s_row_lin[x]) ? dsp_db(s_row_lin[x]) : -128.0f);
         if (s_view.wf_rows < WF_H) s_view.wf_rows++;
+        s_st.wf_dirty = true;
         s_st.row_t_us = t_us;
         s_st.row_open = false;
     }
@@ -508,6 +507,16 @@ static void ui_task(void *) {
     bool touching = false, long_done = false;
     int64_t touch_t0 = 0;
     Hit touch_hit = HIT_NONE;
+    /* Partial updates: the SPI transfer is most of the drawing cost, and the
+     * CPU waits for it. Spectrum at most 10/s, waterfall when it gains a row,
+     * readouts 4/s, header once a second or when a setting changes. */
+    int64_t t_spec = 0, t_ro = 0, t_hdr = 0;
+    bool spec_pending = false;          /* a sweep not yet on the screen */
+    auto draw_all_now = [&](int64_t now) {
+        s_ui.draw_frame(s_view);
+        t_spec = t_ro = t_hdr = now;
+        s_st.wf_dirty = false;
+    };
     for (;;) {
         bool fresh = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(15)) > 0;
 
@@ -520,31 +529,39 @@ static void ui_task(void *) {
             touch_t0 = now;
             touch_hit = hit_test(s_view, (int)tx, (int)ty);
             if (touch_hit != HIT_PLOT) on_hit(touch_hit);
-            s_ui.draw_frame(s_view);
+            draw_all_now(now);
         } else if (t && touching && touch_hit == HIT_PLOT && !long_done && now - touch_t0 > 800000) {
             long_done = true;                         /* long press on the plot */
             clear_all();
-            s_ui.draw_frame(s_view);
+            draw_all_now(now);
         } else if (!t && touching) {
             touching = false;
         }
 
+        bool spec_due = false;
         if (s_view.message && now > s_st.message_until_us) {
             s_view.message = nullptr;
-            fresh = true;
+            spec_due = true;                          /* take the overlay off */
         }
-        if (!fresh) continue;
-
-        bool got = false;
-        xSemaphoreTake(s_lock, portMAX_DELAY);
-        if (s_shared_gen == s_st.gen && s_shared_seq != s_st.seen_seq) {
-            s_st.seen_seq = s_shared_seq;
-            ingest_locked(s_shared_t_us);
-            got = true;
+        if (fresh) {
+            bool got = false;
+            xSemaphoreTake(s_lock, portMAX_DELAY);
+            if (s_shared_gen == s_st.gen && s_shared_seq != s_st.seen_seq) {
+                s_st.seen_seq = s_shared_seq;
+                ingest_locked(s_shared_t_us);
+                got = true;
+            }
+            xSemaphoreGive(s_lock);
+            if (got) {
+                measure_and_level();
+                spec_pending = true;
+            }
         }
-        xSemaphoreGive(s_lock);
-        if (got) measure_and_level();
-        s_ui.draw_frame(s_view);
+        if (spec_pending && now - t_spec >= 100000) spec_due = true;
+        if (spec_due) { s_ui.draw_spectrum(s_view); t_spec = now; spec_pending = false; }
+        if (s_st.wf_dirty) { s_ui.draw_waterfall(s_view); s_st.wf_dirty = false; }
+        if (s_view.have_data && now - t_ro >= 250000) { s_ui.draw_readouts(s_view); t_ro = now; }
+        if (now - t_hdr >= 1000000) { s_ui.draw_header(s_view); t_hdr = now; }
     }
 }
 
@@ -578,9 +595,12 @@ static void alloc_buffers() {
     s_hold = (float *)big_alloc(sizeof(float) * SWEEP_MAX_BINS);
     s_scratch = (uint32_t *)big_alloc(sizeof(uint32_t) * SWEEP_MAX_BINS);
     s_ring = (float *)big_alloc(sizeof(float) * SWEEP_MAX_BINS * FPV_AVG_SWEEPS);   /* 92 KB */
+    uint64_t *sum = (uint64_t *)big_alloc(sizeof(uint64_t) * SWEEP_MAX_BINS, true);
+    uint8_t *cnt = (uint8_t *)big_alloc(SWEEP_MAX_BINS, true);
     void *v = big_alloc(sizeof(UiView));
-    if (!s_psd || !s_work || !s_shared || !s_avg || !s_hold || !s_scratch || !s_ring || !v)
+    if (!s_psd || !s_work || !s_shared || !s_avg || !s_hold || !s_scratch || !s_ring || !sum || !cnt || !v)
         halt("out of memory");
+    an_ring_init(&s_avg_ring, s_ring, sum, cnt, FPV_AVG_SWEEPS, SWEEP_MAX_BINS);
     s_viewp = new (v) UiView();
 }
 }  // namespace fpv

@@ -181,23 +181,75 @@ void an_mean_frames(float *avg, const float *frames, int stride, int nframes, in
     }
 }
 
+/* Powers are never negative, so float bit patterns order like the values. */
+static inline uint32_t fbits(float x) { union { float f; uint32_t u; } v = { x }; return v.u; }
+static inline bool vbits(uint32_t u) { return (u & 0x7f800000u) != 0x7f800000u; }
+
 void an_peak_hold(float *hold, const float *x, int n, bool first) {
     for (int k = 0; k < n; k++) {
-        if (first || !dsp_valid(hold[k])) { hold[k] = x[k]; continue; }
-        if (dsp_valid(x[k]) && x[k] > hold[k]) hold[k] = x[k];
+        uint32_t h = fbits(hold[k]), v = fbits(x[k]);
+        if (first || !vbits(h)) { hold[k] = x[k]; continue; }
+        if (vbits(v) && v > h) hold[k] = x[k];
     }
+}
+
+#define RING_Q 58
+static inline uint64_t lin_to_q(float x) {
+    uint32_t u = fbits(x);
+    uint32_t e = (u >> 23) & 255u;
+    if (e == 0 || (u >> 31)) return 0;
+    uint64_t m = (u & 0x7fffffu) | 0x800000u;     /* x = m * 2^(e - 150) */
+    int sh = (int)e - 150 + RING_Q;
+    if (sh >= 0) return m << (sh > 36 ? 36 : sh);    /* saturates at 4.0 (+6 dBFS) */
+    sh = -sh;
+    return sh >= 64 ? 0 : m >> sh;
+}
+
+void an_ring_init(an_ring_t *r, float *frames, uint64_t *sum, uint8_t *count, int depth, int stride) {
+    r->frames = frames; r->sum = sum; r->count = count;
+    r->depth = depth; r->stride = stride;
+    r->head = r->held = r->nbins = 0;
+}
+
+void an_ring_reset(an_ring_t *r, int nbins) {
+    r->head = r->held = 0;
+    r->nbins = nbins;
+    memset(r->sum, 0, sizeof(uint64_t) * (size_t)nbins);
+    memset(r->count, 0, (size_t)nbins);
+}
+
+void an_ring_push(an_ring_t *r, const float *x, float *avg) {
+    static float recip[256];                      /* 2^-58 / count */
+    if (recip[1] == 0.0f)
+        for (int i = 1; i < 256; i++) recip[i] = (1.0f / 288230376151711744.0f) / (float)i;
+    float *slot = r->frames + (size_t)r->head * r->stride;
+    bool evict = r->held == r->depth;
+    float inf = dsp_inf();
+    for (int k = 0; k < r->nbins; k++) {
+        if (evict && vbits(fbits(slot[k]))) { r->sum[k] -= lin_to_q(slot[k]); r->count[k]--; }
+        slot[k] = x[k];
+        if (vbits(fbits(x[k]))) { r->sum[k] += lin_to_q(x[k]); r->count[k]++; }
+        unsigned c = r->count[k];
+        avg[k] = c ? (float)r->sum[k] * recip[c] : inf;
+    }
+    r->head = (r->head + 1) % r->depth;
+    if (r->held < r->depth) r->held++;
 }
 
 void an_columns_lin(const float *lin, int nbins, int ncols, float *col) {
     for (int c = 0; c < ncols; c++) {
-        int k0 = (int)((int64_t)c * nbins / ncols);
-        int k1 = (int)((int64_t)(c + 1) * nbins / ncols);
+        int k0 = c * nbins / ncols;               /* 32-bit: c * nbins < 2^20 */
+        int k1 = (c + 1) * nbins / ncols;
         if (k1 <= k0) k1 = k0 + 1;
         if (k1 > nbins) k1 = nbins;
-        float best = -1.0f;
-        for (int k = k0; k < k1; k++)
-            if (dsp_valid(lin[k]) && lin[k] > best) best = lin[k];
-        col[c] = best >= 0.0f ? best : dsp_inf();
+        uint32_t best = 0;
+        bool any = false;
+        for (int k = k0; k < k1; k++) {
+            uint32_t v = fbits(lin[k]);
+            if (vbits(v) && (!any || v > best)) { best = v; any = true; }
+        }
+        union { uint32_t u; float f; } b = { best };
+        col[c] = any ? b.f : dsp_inf();
     }
 }
 

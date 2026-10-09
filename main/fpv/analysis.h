@@ -53,6 +53,22 @@ float an_auto_search(const int *freqs_mhz, int n, float requested);
  * frames + f * stride); a bin no sweep has covered stays +INF. Same as the
  * PC version's SpectrumAverager("mean") over the sweeps it holds. */
 void an_mean_frames(float *avg, const float *frames, int stride, int nframes, int n);
+
+/* The same mean, kept up to date sweep by sweep: each push stores the new
+ * sweep over the oldest one and adds / subtracts the two in exact 64-bit
+ * fixed point (Q58), so the result equals an_mean_frames over the held sweeps
+ * (to float rounding) without re-adding all of them, and without the drift a
+ * floating running sum shows when a strong carrier leaves. */
+typedef struct {
+    float *frames;          /* depth * stride stored sweeps */
+    uint64_t *sum;          /* stride */
+    uint8_t *count;         /* stride: valid sweeps per bin */
+    int stride, depth;
+    int head, held, nbins;
+} an_ring_t;
+void an_ring_init(an_ring_t *r, float *frames, uint64_t *sum, uint8_t *count, int depth, int stride);
+void an_ring_reset(an_ring_t *r, int nbins);
+void an_ring_push(an_ring_t *r, const float *x, float *avg);
 void an_peak_hold(float *hold, const float *x, int n, bool first);
 
 /* Max of the valid bins of [k0, k1) in each of ncols columns -> dB (NAN). */

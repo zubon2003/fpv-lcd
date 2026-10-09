@@ -32,7 +32,6 @@ static bool s_ready;
 #define TW_ONE 1073741824.0         /* Q30 */
 #else
 #define TW_ONE 2147483647.0         /* Q31 (1.0 itself does not fit) */
-#define ACC_SHIFT 4                 /* power >> 4 so 15 segments fit in 64 bits */
 #endif
 
 float dsp_inf(void) {
@@ -80,7 +79,7 @@ bool dsp_init(void) {
     /* x_int = 4 (v - mean) w_q15 = x_true * 512 * 32767 * 4, and the ten
      * halving stages divide by 1024: X_int = X_true * s / 1024. */
     double s = 512.0 * 32767.0 * 4.0 / 1024.0;
-    s_psd_scale_1seg = (float)((double)(1 << ACC_SHIFT) / (s * s * wsum * wsum));
+    s_psd_scale_1seg = (float)(1.0 / (s * s * wsum * wsum));
 #endif
     s_ready = true;
     return true;
@@ -109,19 +108,52 @@ static void fft_inplace(void) {
 static inline int32_t mulh(int32_t a, int32_t b) { return (int32_t)(((int64_t)a * b) >> 32); }
 
 static void fft_inplace(void) {
-    for (int len = 2; len <= N; len <<= 1) {
-        int half = len >> 1, step = N / len;
-        for (int j = 0; j < half; j++) {
-            int32_t c = s_cos[j * step], s = s_sin[j * step];
-            for (int i = j; i < N; i += len) {
-                int b = i + half;
-                int32_t xr = s_re[b], xi = s_im[b];
-                /* (c - j s)(xr + j xi) / 2 with Q31 c, s */
-                int32_t tr = mulh(c, xr) + mulh(s, xi);
-                int32_t ti = mulh(c, xi) - mulh(s, xr);
-                int32_t ar = s_re[i] >> 1, ai = s_im[i] >> 1;
-                s_re[b] = ar - tr; s_im[b] = ai - ti;
-                s_re[i] = ar + tr; s_im[i] = ai + ti;
+    int32_t *re = s_re, *im = s_im;
+    /* Stages 1 and 2 together: their twiddles are 1 and -j, so no multiply.
+     * Same halving as the general stage ((a +- W b) / 2 each stage). */
+    for (int g = 0; g < N; g += 4) {
+        int32_t r0 = re[g] >> 1, i0 = im[g] >> 1, r1 = re[g + 1] >> 1, i1 = im[g + 1] >> 1;
+        int32_t r2 = re[g + 2] >> 1, i2 = im[g + 2] >> 1, r3 = re[g + 3] >> 1, i3 = im[g + 3] >> 1;
+        int32_t a0r = (r0 + r1) >> 1, a0i = (i0 + i1) >> 1;     /* stage 1, then /2 for stage 2 */
+        int32_t a1r = (r0 - r1) >> 1, a1i = (i0 - i1) >> 1;
+        int32_t a2r = (r2 + r3) >> 1, a2i = (i2 + i3) >> 1;
+        int32_t b3r = r2 - r3, b3i = i2 - i3;                  /* times -j, halved: (b3i, -b3r) / 2 */
+        int32_t tr = b3i >> 1, ti = -(b3r >> 1);
+        re[g] = a0r + a2r;     im[g] = a0i + a2i;
+        re[g + 2] = a0r - a2r; im[g + 2] = a0i - a2i;
+        re[g + 1] = a1r + tr;  im[g + 1] = a1i + ti;
+        re[g + 3] = a1r - tr;  im[g + 3] = a1i - ti;
+    }
+    for (int len = 8; len <= N; len <<= 1) {
+        int half = len >> 1, step = N / len, groups = N / len;
+        if (half <= groups) {
+            /* many short groups: one twiddle per j, walk the groups */
+            for (int j = 0; j < half; j++) {
+                int32_t c = s_cos[j * step], s = s_sin[j * step];
+                for (int i = j; i < N; i += len) {
+                    int b = i + half;
+                    int32_t xr = re[b], xi = im[b];
+                    int32_t tr = mulh(c, xr) + mulh(s, xi);   /* (c - j s)(xr + j xi) / 2 */
+                    int32_t ti = mulh(c, xi) - mulh(s, xr);
+                    int32_t ar = re[i] >> 1, ai = im[i] >> 1;
+                    re[b] = ar - tr; im[b] = ai - ti;
+                    re[i] = ar + tr; im[i] = ai + ti;
+                }
+            }
+        } else {
+            /* few long groups: walk j inside, no per-j loop overhead */
+            for (int g = 0; g < N; g += len) {
+                const int32_t *cp = s_cos, *sp = s_sin;
+                int32_t *ra = re + g, *ia = im + g, *rb = re + g + half, *ib = im + g + half;
+                for (int j = 0; j < half; j++, cp += step, sp += step) {
+                    int32_t c = *cp, s = *sp;
+                    int32_t xr = rb[j], xi = ib[j];
+                    int32_t tr = mulh(c, xr) + mulh(s, xi);
+                    int32_t ti = mulh(c, xi) - mulh(s, xr);
+                    int32_t ar = ra[j] >> 1, ai = ia[j] >> 1;
+                    rb[j] = ar - tr; ib[j] = ai - ti;
+                    ra[j] = ar + tr; ia[j] = ai + ti;
+                }
             }
         }
     }
@@ -134,11 +166,21 @@ static inline int32_t iq10_q(uint32_t w) { return (int32_t)((w >> 10) << 22) >> 
 void dsp_hop_psd(const uint32_t *iq, unsigned n, float *psd) {
     unsigned nseg = n >= N ? (n - N) / SEG_HOP + 1 : 0;
     memset(s_acc, 0, N * sizeof(*s_acc));
+#ifndef FPV_FFT_REF
+    /* Mean over the whole snapshot, once per hop, in whole LSBs. The PC
+     * version removes it per 1024-sample segment; either way only the bins
+     * next to DC change, and the stitcher drops +-500 kHz around each LO. */
+    int32_t si = 0, sq = 0;
+    for (unsigned k = 0; k < nseg * SEG_HOP + SEG_HOP && k < n; k++) { si += iq10_i(iq[k]); sq += iq10_q(iq[k]); }
+    unsigned used = nseg * SEG_HOP + SEG_HOP < n ? nseg * SEG_HOP + SEG_HOP : n;
+    int32_t mi = used ? (int32_t)((si + (si >= 0 ? 1 : -1) * (int32_t)(used / 2)) / (int32_t)used) : 0;
+    int32_t mq = used ? (int32_t)((sq + (sq >= 0 ? 1 : -1) * (int32_t)(used / 2)) / (int32_t)used) : 0;
+#endif
     for (unsigned seg = 0; seg < nseg; seg++) {
         const uint32_t *x = iq + seg * SEG_HOP;
+#ifdef FPV_FFT_REF
         int32_t si = 0, sq = 0;
         for (int k = 0; k < N; k++) { si += iq10_i(x[k]); sq += iq10_q(x[k]); }
-#ifdef FPV_FFT_REF
         for (int k = 0; k < N; k++) {
             /* complex = I - jQ (the reference client's orientation) */
             int64_t vi = (int64_t)(iq10_i(x[k]) * N - si);
@@ -148,9 +190,6 @@ void dsp_hop_psd(const uint32_t *iq, unsigned n, float *psd) {
             s_im[r] = (int32_t)((-vq * s_win[k]) >> 20);
         }
 #else
-        /* Whole-LSB mean: the fraction left only reaches the bins next to DC,
-         * which the stitcher drops (+-500 kHz). */
-        int32_t mi = (si + N / 2) >> DSP_LOG2N, mq = (sq + N / 2) >> DSP_LOG2N;
         for (int k = 0; k < N; k++) {
             /* complex = I - jQ (the reference client's orientation) */
             int32_t w4 = s_win[k] << 2;
@@ -160,13 +199,10 @@ void dsp_hop_psd(const uint32_t *iq, unsigned n, float *psd) {
         }
 #endif
         fft_inplace();
+        /* |X|^2 in 64 bits: |X| < 2^27, so 15 segments stay below 2^59 */
         for (int k = 0; k < N; k++) {
             int64_t a = s_re[k], b = s_im[k];
-#ifdef FPV_FFT_REF
             s_acc[k] += (uint64_t)(a * a + b * b);
-#else
-            s_acc[k] += (uint64_t)(a * a + b * b) >> ACC_SHIFT;
-#endif
         }
     }
     float scale = nseg ? s_psd_scale_1seg / (float)nseg : 0.0f;

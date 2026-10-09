@@ -64,13 +64,14 @@ public:
     void draw_all(const UiView &v);        /* full redraw */
     void draw_frame(const UiView &v);      /* everything that changes */
     size_t sprite_bytes() const { return bytes_; }
-
-private:
+    /* single regions, for partial updates */
     void draw_header(const UiView &v);
     void draw_spectrum(const UiView &v);
     void draw_axis(const UiView &v);
     void draw_waterfall(const UiView &v);
     void draw_readouts(const UiView &v);
+
+private:
     void readout_box(const UiView &v, const UiChannel &c, int x, int w);
     void readout_single(const UiView &v, const UiChannel &c);
     int x_of(const UiView &v, float mhz) const;

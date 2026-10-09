@@ -121,18 +121,21 @@ def main():
     print(f"UI processing of one 4CH sweep (10-sweep mean, floor, 4 channels): "
           f"{ui_cpu[0]:.1f} .. {ui_cpu[1]:.1f} ms")
 
-    # Screen: header + spectrum + waterfall + readouts pushed every frame,
-    # 320 x 230 px x 16 bit at 40 MHz SPI; LovyanGFX waits on the bus, so the
-    # CPU is busy for the transfer, plus ~4 ms of sprite drawing.
-    push_ms = 320 * 230 * 16 / 40e6 * 1e3
-    draw_ms = push_ms + 4.0
-    print(f"screen update: SPI {push_ms:.1f} ms + drawing ~4 ms = {draw_ms:.1f} ms per frame")
-
+    # Screen, partial updates (monitor.cpp): spectrum at most 10/s, waterfall
+    # 2/s (a new row each 500 ms), readouts 4/s, header 1/s. SPI 40 MHz,
+    # 16-bit pixels; LovyanGFX waits for the bus, so the CPU is busy for the
+    # transfer, plus sprite drawing (assumed 3 ms spectrum, 1 ms the others).
+    def push(rows):
+        return 320 * rows * 16 / 40e6 * 1e3
+    spec_ms = push(104) + 3.0
+    fixed_ms_per_s = 2 * (push(48) + 1.0) + 4 * (push(62) + 1.0) + 1 * (push(16) + 1.0)
+    print(f"screen: spectrum {spec_ms:.1f} ms per frame + {fixed_ms_per_s:.0f} ms/s for waterfall,"
+          f" readouts and header")
     modes = [("4CH", 9), ("3CH", 7), ("1CH", 4)]
     capture_ms = 8192 / 80e6 * 1e3 + 0.1
     for retune in (0.0, 3.0, 6.0):
         print(f"\nretune {retune:.0f} ms per hop (capture {capture_ms:.2f} ms):")
-        print("  mode | PC (USB)     | LCD old FFT          | LCD new FFT")
+        print("  mode | PC (USB)     | LCD 64-bit FFT              | LCD now")
         for name, hops in modes:
             pc = 1000.0 / (hops * (31.0 + retune))
             row = [f"  {name}  | {pc:4.1f} sw/s    "]
@@ -142,11 +145,10 @@ def main():
                     hop = ms(v, 1, model) + capture_ms + retune
                     sweep = hops * hop
                     proc = ui_cpu[ui]
-                    # every sweep is averaged/measured; the screen is drawn
-                    # once per sweep, but at most 10 times a second
-                    s_all = 1000.0 / (sweep + proc + draw_ms)
-                    if s_all > 10.0:
-                        s_all = (1000.0 - 10.0 * draw_ms) / (sweep + proc)
+                    budget = 1000.0 - fixed_ms_per_s
+                    s_all = budget / (sweep + proc + spec_ms)     # a frame per sweep
+                    if s_all > 10.0:                              # frames capped at 10/s
+                        s_all = (budget - 10.0 * spec_ms) / (sweep + proc)
                     rates.append(s_all)
                 fps = [min(r, 10.0) for r in rates]
                 row.append(f"| {min(rates):4.1f}-{max(rates):4.1f} sw/s "
