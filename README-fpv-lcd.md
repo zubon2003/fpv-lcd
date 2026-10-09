@@ -87,24 +87,40 @@ D2/D3（GPIO25/7）はストラップピンなので使っていない。D6（GP
 専用のファーム `firmware/fpv-lcd-xiao-c5-restouch35-merged.bin` を書く（2.8" 用とは別。ビルドは `-D FPV_PANEL=RESTOUCH35`）。
 画面の配置・操作は 2.8" 版と同じで、480×320 に合わせて拡大し、文字は DejaVu フォントになる。
 
-配線は 2.8" 版と**同じ XIAO のピン**。基板の Pico 用ソケット（ピン番号は Pico の物理番号）に、ジャンパ線でつなぐ。
+配線は下駄基板（`hardware/xiao_restouch35_adapter/`）に合わせてあり、**2.8" 版とはピンが違う**。
+下駄基板は Pico と同じ外形・ピン位置（21×51 mm）に XIAO 用の延長（24 mm）を足したもので、基板の Pico 用ソケットにそのまま挿す。
+銅箔は片面（裏）だけで交差なし。信号のある Pico ピンにだけ穴がある。
 
 | 基板の信号（Pico GPIO／ピン番号） | XIAO | GPIO |
 |---|---|---|
-| LCD_CLK（GP10／14） | D8 | 8 |
-| MOSI（GP11／15） | D10 | 10 |
-| MISO（GP12／16）タッチのデータ | D9 | 9 |
-| LCD_CS（GP9／12） | D0 | 1 |
-| LCD_DC（GP8／11） | D1 | 0 |
-| LCD_RST（GP15／20） | D4 | 23 |
-| TP_CS（GP16／21） | D5 | 24 |
-| LCD_BL（GP13／17） | D6 | 11 |
-| VSYS（39） | 下記 | – |
-| GND（38 など） | GND | – |
+| LCD_DC（GP8／11） | D6 | 11 |
+| LCD_CS（GP9／12） | D5 | 24 |
+| LCD_CLK（GP10／14） | D4 | 23 |
+| MOSI（GP11／15） | D1 | 0 |
+| MISO（GP12／16）タッチのデータ | D0 | 1 |
+| LCD_BL（GP13／17） | D10 | 10 |
+| LCD_RST（GP15／20） | D9 | 9 |
+| TP_CS（GP16／21） | D7 | 12 |
+| GND（28、38） | GND | – |
+| VSYS（39） | 下駄基板の VSYS パッドへ線で（下記） | – |
 | TP_IRQ（GP17）、SD_CS（GP22） | 未接続 | – |
 
-- **電源**：この基板は VSYS（5 V、最大 180 mA）から自前で 3.3 V を作る。USB 給電だけなら XIAO の **5V** ピンから。
-  電池で動かすときは XIAO の 5V ピンに電圧が出ないので、VSYS を XIAO 裏の **BAT+** につなぐ（Pico の VSYS も電池をつなぐ前提の端子）。
+下駄基板のファイル：
+
+| ファイル | 内容 |
+|---|---|
+| `xiao_restouch35_adapter.dxf` | 上から見た図。レイヤ OUTLINE（外形）、COPPER_BOTTOM（裏の銅箔、閉じた輪郭）、TRACK_CENTER（配線の中心線、幅 0.6 mm）、DRILL（穴 1.0 mm／線用 0.9 mm）、SILK_TOP（XIAO の位置・ピン名） |
+| `xiao_restouch35_adapter_bottom_mirrored.dxf` | 裏の銅箔を銅箔側から見た図（左右反転）。トナー転写・フィルム用 |
+| `xiao_restouch35_adapter_preview.png` | 確認用の絵 |
+| `make_geta.py` | 生成スクリプト（`python3 make_geta.py 出力先`、ezdxf と shapely が要る）。クリアランス 0.4 mm 以上を自動で確認する |
+
+- XIAO は**部品面を上**にして延長部に載せ、USB-C を基板の端に合わせる。Pico 用のピンヘッダ（オス）は裏から立てる。
+- 延長部は Pico の USB 側の外に出る。ResTouch 基板の Pico の向き（USB の側）を基板のシルクで確かめてから挿す。
+- 下の 2 つのピン（20、21）は Pico と同じく基板の端から 0.47 mm の位置にある。
+
+- **電源**：この基板は VSYS（5 V、最大 180 mA）から自前で 3.3 V を作る。下駄基板の **VSYS** パッドに線を 1 本つなぐ。
+  USB 給電だけなら隣の **5V** パッド（XIAO の 5V ピン）から。電池で動かすときは XIAO の 5V ピンに電圧が出ないので、
+  XIAO 裏の **BAT+** から（XIAO を載せる前に線をはんだ付けしておく）。Pico の VSYS も電池をつなぐ前提の端子。
   ただし電池電圧（3.3〜4.2 V）でこの基板の 3.3 V がどこまで保てるかは未確認。電池が減るとバックライトが暗くなる程度で済むはずだが、
   表示が乱れるなら電源を見直す。
 - **SD カード**は入れない（SD_CS を使っていないので、カードが MISO を乱すおそれがある）。

@@ -16,6 +16,18 @@
  * the ESP-SDR UART bridge in the stock firmware, which this build disables. */
 #pragma once
 
+#if FPV_PANEL_RESTOUCH35
+/* 3.5" build: the pins of the XIAO -> Pico-ResTouch adapter board
+ * (hardware/xiao_restouch35_adapter: one copper layer, no crossings). */
+#define FPV_PIN_SCLK 23              /* D4 -> GP10 LCD_CLK */
+#define FPV_PIN_MOSI 0               /* D1 -> GP11 MOSI */
+#define FPV_PIN_MISO 1               /* D0 -> GP12 MISO */
+#define FPV_PIN_LCD_CS 24            /* D5 -> GP9  LCD_CS */
+#define FPV_PIN_LCD_DC 11            /* D6 -> GP8  LCD_DC */
+#define FPV_PIN_LCD_RST 9            /* D9 -> GP15 LCD_RST */
+#define FPV_PIN_TOUCH_CS 12          /* D7 -> GP16 TP_CS */
+#define FPV_PIN_BACKLIGHT 10         /* D10 -> GP13 LCD_BL */
+#else
 #define FPV_PIN_SCLK 8
 #define FPV_PIN_MOSI 10
 #define FPV_PIN_MISO 9
@@ -24,6 +36,7 @@
 #define FPV_PIN_LCD_RST 23
 #define FPV_PIN_TOUCH_CS 24
 #define FPV_PIN_BACKLIGHT 11         /* -1 if LED is tied to 3V3 */
+#endif
 #define FPV_BACKLIGHT_ON 1           /* level that lights it */
 
 /* Battery (XIAO ESP32-C5 on-board divider). */
@@ -38,20 +51,20 @@
 #define FPV_BAT_ABSENT_MV 1000       /* below: no battery, running from USB */
 
 #if FPV_PANEL_RESTOUCH35
-/* Waveshare Pico-ResTouch-LCD-3.5 (480 x 320, ILI9488 + XPT2046), wired to
- * the same XIAO pins as the 2.8" board, by the Pico GPIO names on its header:
+/* Waveshare Pico-ResTouch-LCD-3.5 (480 x 320, ILI9488 + XPT2046) on the
+ * adapter board (pins above):
  *
  *   module (Pico pin)          XIAO   GPIO
- *   LCD_CLK  GP10 (14)         D8     8
- *   MOSI     GP11 (15)         D10    10
- *   MISO     GP12 (16)         D9     9     (touch data)
- *   LCD_CS   GP9  (12)         D0     1
- *   LCD_DC   GP8  (11)         D1     0
- *   LCD_RST  GP15 (20)         D4     23
- *   TP_CS    GP16 (21)         D5     24
- *   LCD_BL   GP13 (17)         D6     11
- *   VSYS     (39)              5V on USB / BAT+ on battery (see README)
- *   GND      (38 etc.)         GND
+ *   LCD_DC   GP8  (11)         D6     11
+ *   LCD_CS   GP9  (12)         D5     24
+ *   LCD_CLK  GP10 (14)         D4     23
+ *   MOSI     GP11 (15)         D1     0
+ *   MISO     GP12 (16)         D0     1     (touch data)
+ *   LCD_BL   GP13 (17)         D10    10
+ *   LCD_RST  GP15 (20)         D9     9
+ *   TP_CS    GP16 (21)         D7     12
+ *   GND      (28, 38)          GND
+ *   VSYS     (39)              wire from 5V (USB) or BAT+ (battery)
  *   TP_IRQ GP17, SD_CS GP22    -      (not used; leave the SD slot empty)
  *
  * The shift registers limit the clock: 20 MHz is what others run on ESP32;
