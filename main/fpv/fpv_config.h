@@ -85,7 +85,7 @@
 #define FPV_STEP_MHZ 25         /* LO spacing */
 #define FPV_USABLE_MHZ 28.0f    /* kept half-width of each hop */
 #define FPV_DC_KHZ 500.0f       /* dropped around each LO */
-#define FPV_DEFAULT_GAIN 40     /* gain-table index; 55+ saturates on the C5 */
+#define FPV_DEFAULT_GAIN 25     /* gain-table index; 55+ saturates on the C5 */
 #define FPV_GAIN_MAX 60         /* setup screen: one step past this = AGC */
 #define FPV_MARGIN_MHZ 15.0f    /* span beyond the outer channels / 1ch span */
 
