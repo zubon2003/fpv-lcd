@@ -69,6 +69,8 @@ class FakeFirmware(threading.Thread):
                     self.send(b"ERR command\n")
                 elif text == "FPV?":
                     self.send(b"FPV 1 bin_hz=78125 maxbins=2304 step=25 usable=28 dc_khz=500 samples=8192\n")
+                elif text == "FPV STATE?":
+                    self.send(b"STATE mode=PC ch=F3 gain=40 snr=18 start=5670 nbins=2112 hops=9 stream=0 bat_mv=3920\n")
                 elif text.startswith("FPV SPAN"):
                     self.span = text
                     self.send(b"OK\n")
@@ -130,9 +132,8 @@ def main():
     dev = FakeFirmware(m, frames)
     dev.start()
     args = build_parser().parse_args(["--channels", ",".join(chans)])
-    args.backend, args.bin_khz, args.step = "fw", 78.125, 25
     grid, _los = _span_planner(args)(start, stop)
-    es = EspSettings(backend="fw", channels=tuple((c.name, c.freq_mhz) for c in channels))
+    es = EspSettings(channels=tuple((c.name, c.freq_mhz) for c in channels))
     settings = SweepSettings(start_mhz=start, stop_mhz=stop, bin_hz=78125, gain=40, port=path)
     stop_ev = threading.Event()
     got = []
