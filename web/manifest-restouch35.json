@@ -1,0 +1,11 @@
+{
+  "name": "FPV band monitor (XIAO ESP32-C5, 3.5\" Pico-ResTouch-LCD-3.5)",
+  "version": "09b6ffd",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-C5",
+      "parts": [{ "path": "firmware/fpv-lcd-xiao-c5-restouch35.bin", "offset": 0 }]
+    }
+  ]
+}

@@ -23,6 +23,13 @@
 - 切り替えは Kconfig ではなく CMake のビルドプロパティ（`FPV_LCD_MONITOR`, `FPV_PANEL`）。Kconfig は requirements 展開時に見えないため。
 - `-D FPV_LCD_MONITOR=ON` なしなら元の ESP-SDR。
 
+## ウェブ書き込み（GitHub Pages）
+
+- https://zubon2003.github.io/fpv-lcd/ … `web/`（ESP Web Tools 10.4.0、ESP32-C5 対応）。`.github/workflows/pages.yml` が `web/**` の push で公開する。
+- ファームは CI でビルドしていない。手元で 2.8"（`build-fpv`）と 3.5"（`build-fpv35`）をビルドし、各ビルドフォルダで
+  `python -m esptool --chip esp32c5 merge-bin -o <repo>/web/firmware/fpv-lcd-xiao-c5-{ili9341,restouch35}.bin @flash_args`、
+  `web/manifest-*.json` と `index.html` の `version`（ソースのコミット）を書き換えてコミットする。
+
 ## 守ること（ハマった点）
 
 - **C5 の .bss は 0x40820000 未満で終わる必要がある**（その上は RF ダンプ領域）。今は 0x4081ee38（2.8"）/ 0x4081f0b8（3.5"）で余裕は 3〜4 KB。大きいバッファは静的に置かず heap/PSRAM（`big_alloc`, `CONFIG_SPIRAM`, `SPIRAM_USE_CAPS_ALLOC`）。ビルド後に `grep "_bss_end = " build-*/esp_sdr.map` で確認。
