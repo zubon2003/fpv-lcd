@@ -111,7 +111,10 @@ D2/D3（GPIO25/7）はストラップピンなので使っていない。D6（GP
 |---|---|
 | `xiao_restouch35_adapter.dxf` | 上から見た図。レイヤ OUTLINE（外形）、COPPER_BOTTOM（裏の銅箔、閉じた輪郭）、TRACK_CENTER（配線の中心線、幅 0.6 mm）、DRILL（穴 1.0 mm／線用 0.9 mm）、SILK_TOP（XIAO の位置・ピン名） |
 | `xiao_restouch35_adapter_bottom_mirrored.dxf` | 裏の銅箔を銅箔側から見た図（左右反転）。トナー転写・フィルム用 |
-| `xiao_restouch35_adapter_preview.png` | 確認用の絵 |
+| `xiao_restouch35_adapter_preview.png` | 確認用の絵（上から見た図、ピン名・GPIO 入り） |
+| `copper_top_view_1to1_600dpi.png` | 裏の銅箔を上から見た白黒の図。600 dpi、100 % で印刷すると実寸 |
+| `copper_mirrored_1to1_600dpi.png` | 同じく左右反転（銅箔側から見た図）。トナー転写用 |
+| `silk_top.png` | 部品面の印字（XIAO の位置・ピン名） |
 | `make_geta.py` | 生成スクリプト（`python3 make_geta.py 出力先`、ezdxf と shapely が要る）。クリアランス 0.4 mm 以上を自動で確認する |
 
 - XIAO は**部品面を上**にして延長部に載せ、USB-C を基板の端に合わせる。Pico 用のピンヘッダ（オス）は裏から立てる。

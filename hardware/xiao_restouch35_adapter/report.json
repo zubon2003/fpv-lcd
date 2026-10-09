@@ -1,0 +1,70 @@
+{
+ "board_mm": [
+  21.0,
+  75.0
+ ],
+ "tracks": 12,
+ "pads": 27,
+ "clearance_problems": [
+  [
+   "D9-LCD_RST",
+   "board edge",
+   0.47
+  ],
+  [
+   "D7-TP_CS",
+   "board edge",
+   0.47
+  ]
+ ],
+ "nets": [
+  {
+   "xiao": "D6",
+   "gpio": 11,
+   "pico_pin": 11,
+   "signal": "LCD_DC"
+  },
+  {
+   "xiao": "D5",
+   "gpio": 24,
+   "pico_pin": 12,
+   "signal": "LCD_CS"
+  },
+  {
+   "xiao": "D4",
+   "gpio": 23,
+   "pico_pin": 14,
+   "signal": "LCD_CLK"
+  },
+  {
+   "xiao": "D1",
+   "gpio": 0,
+   "pico_pin": 15,
+   "signal": "MOSI"
+  },
+  {
+   "xiao": "D0",
+   "gpio": 1,
+   "pico_pin": 16,
+   "signal": "MISO"
+  },
+  {
+   "xiao": "D10",
+   "gpio": 10,
+   "pico_pin": 17,
+   "signal": "LCD_BL"
+  },
+  {
+   "xiao": "D9",
+   "gpio": 9,
+   "pico_pin": 20,
+   "signal": "LCD_RST"
+  },
+  {
+   "xiao": "D7",
+   "gpio": 12,
+   "pico_pin": 21,
+   "signal": "TP_CS"
+  }
+ ]
+}

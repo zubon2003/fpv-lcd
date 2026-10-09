@@ -181,10 +181,10 @@ def text(s, p, h=0.9, align="MIDDLE_CENTER", layer="SILK_TOP"):
 xb = (BOARD_W / 2 - XIAO_W / 2, XIAO_TOP, BOARD_W / 2 + XIAO_W / 2, XIAO_TOP + XIAO_L)
 msp.add_lwpolyline([flip(p) for p in [(xb[0], xb[1]), (xb[2], xb[1]), (xb[2], xb[3]), (xb[0], xb[3])]],
                    close=True, dxfattribs={"layer": "SILK_TOP"})
-text("XIAO ESP32-C5  (USB-C ->)", (BOARD_W / 2, XIAO_TOP + 9.5), 0.9)
-text("face up", (BOARD_W / 2, XIAO_TOP + 11), 0.8)
+text("XIAO C5", (BOARD_W / 2, XIAO_TOP + 1.6), 0.9)
+text("face up", (BOARD_W / 2, XIAO_TOP + 2.8), 0.7)
 msp.add_line(flip((0, 0)), flip((BOARD_W, 0)), dxfattribs={"layer": "SILK_TOP", "linetype": "DASHED"})
-text("Pico USB end (pin 1 left)", (BOARD_W / 2, 0.9), 0.7)
+text("Pico USB end", (0.6, -0.6), 0.6, "MIDDLE_LEFT")
 for x, y, d, drill, label, kind in pads:
     if kind == "xiao":
         off = 1.9 if x < BOARD_W / 2 else -1.9
@@ -194,8 +194,9 @@ for x, y, d, drill, label, kind in pads:
         sig = {pp: s for _, pp, s, _ in NETS}.get(int(label), "GND" if int(label) in GND_PICO else "VSYS")
         text(f"{label} {sig}", (x + off, y), 0.6, "MIDDLE_LEFT" if off > 0 else "MIDDLE_RIGHT")
     else:
-        text(label, (x - 2.0, y), 0.7, "MIDDLE_RIGHT")
-text("wire 5V or BAT+ -> VSYS", (BOARD_W / 2, -0.6 + 4.6), 0.6)
+        text(label, (x - 1.4, y if label == "5V" else y - 0.9), 0.6, "MIDDLE_RIGHT")
+text("wire: 5V or BAT+", (3.6 + 1.0, 9.0), 0.6, "MIDDLE_LEFT")
+text("  -> VSYS pad", (3.6 + 1.0, 10.0), 0.6, "MIDDLE_LEFT")
 text("copper: bottom (drawn as seen from the top)", (BOARD_W / 2, PICO_L + 2), 0.8, layer="NOTE")
 doc.saveas(OUT / "xiao_restouch35_adapter.dxf")
 
@@ -216,43 +217,122 @@ for x, y, d, drill, label, kind in pads:
     m2.add_circle(mir((x, y)), drill / 2, dxfattribs={"layer": "DRILL"})
 doc2.saveas(OUT / "xiao_restouch35_adapter_bottom_mirrored.dxf")
 
-# ---------------------------------------------------------------- preview
-import matplotlib  # noqa: E402
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
+# ---------------------------------------------------------------- PNG
+from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
-fig, ax = plt.subplots(figsize=(5.2, 9.5), dpi=150)
-ax.set_facecolor("#0b3d1e")
-xs, ys = outline.exterior.xy
-ax.fill(xs, [-v for v in ys], color="#1f6b38", zorder=0)
-for g in geoms:
-    x, y = g.exterior.xy
-    ax.fill(x, [-v for v in y], color="#d9a441", zorder=1)
-for x, y, d, drill, label, kind in pads:
-    ax.add_patch(plt.Circle((x, -y), drill / 2, color="#111", zorder=3))
-ax.add_patch(plt.Rectangle((xb[0], -xb[3]), XIAO_W, XIAO_L, fill=False, ec="white", ls="--", lw=0.8, zorder=4))
-ax.plot([0, BOARD_W], [0, 0], color="white", ls=":", lw=0.6)
-for x, y, d, drill, label, kind in pads:
-    if kind == "pico":
-        sig = {pp: s for _, pp, s, _ in NETS}.get(int(label), "GND" if int(label) in GND_PICO else "VSYS")
-        lab, ha, dx = f"{label} {sig}", ("left" if x < BOARD_W / 2 else "right"), (1.2 if x < BOARD_W / 2 else -1.2)
-    elif kind == "xiao":
-        g = XIAO_GPIO.get(label)
-        lab = label + (f" G{g}" if g is not None else "")
-        ha, dx = ("left" if x < BOARD_W / 2 else "right"), (1.2 if x < BOARD_W / 2 else -1.2)
-    else:
-        lab, ha, dx = label, "right", -1.3
-    ax.text(x + dx, -y, lab, color="white", fontsize=5, ha=ha, va="center", zorder=5)
-ax.text(BOARD_W / 2, -XIAO_TOP - 0.2, "USB-C", color="white", fontsize=6, ha="center", va="bottom")
-ax.text(BOARD_W / 2, 0.4, "Pico USB end", color="white", fontsize=5, ha="center", va="bottom")
-ax.set_aspect("equal")
-ax.set_xlim(-1.5, BOARD_W + 1.5)
-ax.set_ylim(-PICO_L - 1.5, EXT + 2.5)
-ax.set_title("XIAO ESP32-C5 -> Pico-ResTouch-LCD-3.5\n(top view, copper on the bottom)", fontsize=8)
-ax.set_xticks([])
-ax.set_yticks([])
-fig.tight_layout()
-fig.savefig(OUT / "xiao_restouch35_adapter_preview.png")
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+MARGIN = 2.0                               # mm around the board
+
+
+def raster(px_per_mm, mirror=False):
+    w = int(round((BOARD_W + 2 * MARGIN) * px_per_mm))
+    h = int(round((PICO_L + EXT + 2 * MARGIN) * px_per_mm))
+
+    def T(p):
+        x, y = p
+        if mirror:
+            x = BOARD_W - x
+        return ((x + MARGIN) * px_per_mm, (y + EXT + MARGIN) * px_per_mm)
+    return w, h, T
+
+
+def draw_polys(d, T, polys, fill, hole_fill):
+    for g in polys:
+        d.polygon([T(p) for p in g.exterior.coords], fill=fill)
+        for hole in g.interiors:
+            d.polygon([T(p) for p in hole.coords], fill=hole_fill)
+
+
+def font(px):
+    return ImageFont.truetype(FONT, max(8, int(px)))
+
+
+def sig_of(label):
+    return {pp: s for _, pp, s, _ in NETS}.get(int(label), "GND" if int(label) in GND_PICO else "VSYS")
+
+
+def render_overview(path, k=24):
+    w, h, T = raster(k)
+    im = Image.new("RGB", (w, h + 3 * k), "#101418")
+    d = ImageDraw.Draw(im)
+    d.rectangle([T((0, -EXT)), T((BOARD_W, PICO_L))], fill="#1d6b3a", outline="#9fd8b0", width=2)
+    draw_polys(d, T, geoms, "#d9a441", "#1d6b3a")
+    for x, y, dd, drill, label, kind in pads:
+        cx, cy = T((x, y))
+        r = drill / 2 * k
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill="#101418")
+    # XIAO body and the Pico USB end
+    d.rectangle([T(xb[:2]), T(xb[2:])], outline="white", width=2)
+    yx = T((0, 0))[1]
+    for x0 in range(0, int(BOARD_W * 10), 8):
+        d.line([T((x0 / 10, 0)), T((min(x0 / 10 + 0.4, BOARD_W), 0))], fill="white", width=1)
+    f = font(0.75 * k)
+    fs = font(0.6 * k)
+    for x, y, dd, drill, label, kind in pads:
+        cx, cy = T((x, y))
+        left = x < BOARD_W / 2
+        if kind == "xiao":
+            g = XIAO_GPIO.get(label)
+            t = label + (f" (G{g})" if g is not None else "")
+        elif kind == "pico":
+            t = f"{label} {sig_of(label)}"
+        else:
+            t = label + " pad"
+            left = False
+        off = 1.25 * k
+        if left:
+            d.text((cx + off, cy), t, fill="white", font=f, anchor="lm")
+        else:
+            d.text((cx - off, cy), t, fill="white", font=f, anchor="rm")
+    d.text(T((BOARD_W / 2, -EXT + 1.6)), "XIAO ESP32-C5 (face up)", fill="white", font=fs, anchor="mm")
+    d.text(T((BOARD_W / 2, -EXT - 1.0)), "USB-C", fill="white", font=fs, anchor="mm")
+    d.text(T((0.6, -0.7)), "Pico USB end", fill="white", font=fs, anchor="lm")
+    d.text(T((4.6, 9.0)), "wire 5V pad (USB) or", fill="#ffe08a", font=fs, anchor="lm")
+    d.text(T((4.6, 10.0)), "XIAO BAT+ -> VSYS pad", fill="#ffe08a", font=fs, anchor="lm")
+    d.text((w / 2, h + 1.5 * k), f"top view, copper on the bottom   {BOARD_W:g} x {PICO_L + EXT:g} mm",
+           fill="white", font=fs, anchor="mm")
+    im.save(path)
+
+
+def render_mask(path, mirror, dpi=600):
+    k = dpi / 25.4
+    w, h, T = raster(k, mirror)
+    im = Image.new("L", (w, h), 255)
+    d = ImageDraw.Draw(im)
+    draw_polys(d, T, geoms, 0, 255)
+    for x, y, dd, drill, label, kind in pads:
+        cx, cy = T((x, y))
+        r = drill / 2 * k * 0.5           # small centre mark for drilling
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
+    (x0, y0), (x1, y1) = T((0, -EXT)), T((BOARD_W, PICO_L))
+    d.rectangle([min(x0, x1), y0, max(x0, x1), y1], outline=0, width=max(1, int(0.1 * k)))
+    im.save(path, dpi=(dpi, dpi))
+
+
+def render_silk(path, k=24):
+    w, h, T = raster(k)
+    im = Image.new("RGB", (w, h), "white")
+    d = ImageDraw.Draw(im)
+    d.rectangle([T((0, -EXT)), T((BOARD_W, PICO_L))], outline="black", width=2)
+    d.rectangle([T(xb[:2]), T(xb[2:])], outline="black", width=2)
+    f = font(0.7 * k)
+    for x, y, dd, drill, label, kind in pads:
+        cx, cy = T((x, y))
+        r = dd / 2 * k
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline="black", width=2)
+        t = (label if kind == "xiao" else f"{label} {sig_of(label)}" if kind == "pico" else label)
+        if x < BOARD_W / 2 and kind != "wire":
+            d.text((cx + 1.2 * k, cy), t, fill="black", font=f, anchor="lm")
+        else:
+            d.text((cx - 1.2 * k, cy), t, fill="black", font=f, anchor="rm")
+    d.text(T((BOARD_W / 2, -EXT + 1.6)), "XIAO ESP32-C5 (face up)", fill="black", font=f, anchor="mm")
+    im.save(path)
+
+
+render_overview(OUT / "xiao_restouch35_adapter_preview.png")
+render_mask(OUT / "copper_top_view_1to1_600dpi.png", mirror=False)
+render_mask(OUT / "copper_mirrored_1to1_600dpi.png", mirror=True)
+render_silk(OUT / "silk_top.png")
 
 report = {
     "board_mm": [BOARD_W, PICO_L + EXT],
