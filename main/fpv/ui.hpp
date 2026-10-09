@@ -54,7 +54,7 @@ uint8_t wf_code(float db);
 
 enum Hit : uint8_t {
     HIT_NONE = 0, HIT_MODE, HIT_GAIN_DOWN, HIT_GAIN_UP, HIT_HOLD,
-    HIT_PLOT, HIT_CH_PREV, HIT_CH_NEXT, HIT_BAND,
+    HIT_PLOT, HIT_CH_PREV, HIT_CH_NEXT,
 };
 Hit hit_test(const UiView &v, int x, int y);
 

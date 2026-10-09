@@ -121,8 +121,8 @@ def main():
     results = [check_psd()]
     results.append(check_sweep("4CH", ["E2", "E1", "F3", "F5"],
                                [(5685.4, 0.20), (5704.2, 0.12), (5780.0, 0.30)]))
-    results.append(check_sweep("3CH", ["E1", "F1", "F3"],
-                               [(5705.6, 0.15), (5739.1, 0.25), (5781.0, 0.08)]))
+    results.append(check_sweep("3CH", ["E1", "F1", "F4"],
+                               [(5705.6, 0.15), (5739.1, 0.25), (5801.0, 0.08)]))
     results.append(check_sweep("1CH F3", ["F3"], [(5780.7, 0.20)]))
     print("\nPASS" if all(results) else "\nFAIL")
     return 0 if all(results) else 1

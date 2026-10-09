@@ -7,7 +7,8 @@
  *   ui: polls the touch panel, folds each sweep into the average / peak hold /
  *     waterfall, measures the channels and redraws.
  *
- * Modes: 4CH (E2 E1 F3 F5), 3CH (E1 F1 F3), 1CH (any channel, centre +-15 MHz).
+ * Modes: 4CH (E2 E1 F3 F5), 3CH (E1 F1 F4), 1CH (one of E2 E1 F1 F3 F4 F5,
+ * centre +-15 MHz).
  */
 #include <math.h>
 #include <new>
@@ -96,10 +97,13 @@ static Renderer s_ui;
 static bool s_have_psram;
 
 /* ------------------------------------------------------------- settings */
+/* 1CH: the triangle buttons step through these, in this order. */
+static const char *const SINGLE_CHANNELS[] = {"E2", "E1", "F1", "F3", "F4", "F5"};
+constexpr int NUM_SINGLE = sizeof(SINGLE_CHANNELS) / sizeof(SINGLE_CHANNELS[0]);
+
 struct Settings {
     uint8_t mode = MODE_4CH;
-    uint8_t band = 3;            /* F */
-    uint8_t number = 3;          /* F3 */
+    uint8_t single = 3;          /* 1CH: index into SINGLE_CHANNELS (F3) */
     int8_t gain = FPV_DEFAULT_GAIN;
 };
 static Settings s_set;
@@ -111,7 +115,7 @@ static void settings_load() {
     Settings t;
     size_t n = sizeof(t);
     if (nvs_get_blob(h, "set", &t, &n) == ESP_OK && n == sizeof(t) && t.mode < MODE_COUNT &&
-        t.band < FPV_NUM_BANDS && t.number >= 1 && t.number <= FPV_CH_PER_BAND)
+        t.single < NUM_SINGLE)
         s_set = t;
     nvs_close(h);
 }
@@ -143,8 +147,9 @@ static void touch_cal_save(const uint16_t cal[8]) {
 
 /* ------------------------------------------------------------- channels */
 static int colour_slot(const char *name) {
-    static const char *const ORDER[] = {"E2", "E1", "F3", "F5", "F1"};
-    for (int i = 0; i < 5; i++)
+    /* red, green, blue, yellow, purple, cyan */
+    static const char *const ORDER[] = {"E2", "E1", "F3", "F5", "F1", "F4"};
+    for (int i = 0; i < 6; i++)
         if (!strcmp(name, ORDER[i])) return i;
     return 5;
 }
@@ -156,7 +161,7 @@ struct Lineup {
 
 static Lineup lineup_for(const Settings &st) {
     static const char *const M4[] = {"E2", "E1", "F3", "F5"};
-    static const char *const M3[] = {"E1", "F1", "F3"};
+    static const char *const M3[] = {"E1", "F1", "F4"};
     Lineup l{};
     if (st.mode == MODE_4CH) {
         l.n = 4;
@@ -166,7 +171,7 @@ static Lineup lineup_for(const Settings &st) {
         for (int i = 0; i < 3; i++) fpv_channel_parse(M3[i], &l.ch[i]);
     } else {
         l.n = 1;
-        l.ch[0] = fpv_channel(st.band, st.number);
+        fpv_channel_parse(SINGLE_CHANNELS[st.single], &l.ch[0]);
     }
     return l;
 }
@@ -328,18 +333,11 @@ static void on_hit(Hit hit) {
         break;
     case HIT_CH_PREV:
     case HIT_CH_NEXT: {
-        int idx = s_set.band * FPV_CH_PER_BAND + (s_set.number - 1);
-        int total = FPV_NUM_BANDS * FPV_CH_PER_BAND;
-        idx = (idx + (hit == HIT_CH_NEXT ? 1 : total - 1)) % total;
-        s_set.band = (uint8_t)(idx / FPV_CH_PER_BAND);
-        s_set.number = (uint8_t)(idx % FPV_CH_PER_BAND + 1);
+        int step = hit == HIT_CH_NEXT ? 1 : NUM_SINGLE - 1;
+        s_set.single = (uint8_t)((s_set.single + step) % NUM_SINGLE);
         replan = true;
         break;
     }
-    case HIT_BAND:
-        s_set.band = (uint8_t)((s_set.band + 1) % FPV_NUM_BANDS);
-        replan = true;
-        break;
     default:
         return;
     }

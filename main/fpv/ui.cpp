@@ -95,7 +95,6 @@ static uint8_t dev_colour(float off) {
 /* Header: [MODE 0..47] status [GAIN 214..275: -|+] [HOLD 278..319] */
 constexpr int MODE_X1 = 48, GAIN_X0 = 214, GAIN_X1 = 276, HOLD_X0 = 278;
 constexpr int ARROW_W = 34;   /* 1ch readout: < and > buttons */
-constexpr int BAND_X1 = 120;  /* 1ch readout: tap on the name to change band */
 
 Hit hit_test(const UiView &v, int x, int y) {
     if (y < HDR_H + 8) {
@@ -108,7 +107,6 @@ Hit hit_test(const UiView &v, int x, int y) {
     if (v.mode == MODE_1CH) {
         if (x < ARROW_W) return HIT_CH_PREV;
         if (x >= SCR_W - ARROW_W) return HIT_CH_NEXT;
-        if (x < BAND_X1) return HIT_BAND;
     }
     return HIT_NONE;
 }
@@ -404,7 +402,7 @@ void Renderer::readout_single(const UiView &v, const UiChannel &c) {
     s.drawRoundRect(x0, 1, x1 - x0, RO_H - 2, 3, ch_full(c.color));
 
     bool live = c.m.present;
-    /* name (tap to change band) and nominal */
+    /* name and nominal */
     s.setFont(&fonts::Font2);
     s.setTextDatum(textdatum_t::top_left);
     s.setTextColor(ch_full(c.color));

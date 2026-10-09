@@ -16,8 +16,8 @@
 using namespace fpv;
 
 static int colour_slot(const char *name) {
-    static const char *const ORDER[] = {"E2", "E1", "F3", "F5", "F1"};
-    for (int i = 0; i < 5; i++)
+    static const char *const ORDER[] = {"E2", "E1", "F3", "F5", "F1", "F4"};
+    for (int i = 0; i < 6; i++)
         if (!strcmp(name, ORDER[i])) return i;
     return 5;
 }
