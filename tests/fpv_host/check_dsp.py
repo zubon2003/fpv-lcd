@@ -52,23 +52,36 @@ def capture(lo_mhz, carriers, noise=0.004, dc=0.01 + 0.006j, image=0.03):
     return words.astype(np.uint32), ref
 
 
-def run(*args):
-    return subprocess.run([str(EXE), *map(str, args)], check=True,
+def run(*args, exe=EXE):
+    return subprocess.run([str(exe), *map(str, args)], check=True,
                           capture_output=True, cwd=HERE).stdout
 
 
-def check_psd():
-    w, ref = capture(5780, [(5781.3, 0.25), (5760, 0.05)])
+def psd_case(label, carriers, noise):
+    w, ref = capture(5780, carriers, noise=noise)
     (HERE / "iq.bin").write_bytes(w.tobytes())
-    c = np.frombuffer(run("psd", "iq.bin", N), np.float32)
     py = hop_spectrum_db(ref, 1024)
-    cdb = 10 * np.log10(np.maximum(c, 1e-15))
     keep = np.ones(1024, bool)
-    keep[510:515] = False                     # DC bin (mean removal rounding)
-    d = np.abs(cdb - py)[keep]
-    print(f"hop PSD: max |C - Python| = {d.max():.3f} dB, mean {d.mean():.4f} dB "
-          f"(over {keep.sum()} bins, signal peak {py.max():.1f} dB, floor {np.median(py):.1f} dB)")
-    return d.max() < 0.5 and d.mean() < 0.05
+    keep[506:519] = False                     # +-500 kHz round DC: dropped by the stitcher
+    ok = True
+    print(f"hop PSD, {label}: signal peak {py.max():.1f} dB, floor {np.median(py):.1f} dB "
+          f"(ADC noise {noise * 512:.1f} LSB rms)")
+    for name, exe in (("new 32-bit FFT", EXE), ("old 64-bit FFT", HERE / "host_dsp_ref")):
+        c = np.frombuffer(run("psd", "iq.bin", N, exe=exe), np.float32)
+        cdb = 10 * np.log10(np.maximum(c, 1e-15))
+        d = (cdb - py)[keep]
+        floor_shift = np.median(cdb[keep]) - np.median(py[keep])
+        print(f"  {name}: max |C - Python| {np.abs(d).max():.3f} dB, mean {np.abs(d).mean():.4f} dB, "
+              f"floor shift {floor_shift:+.3f} dB")
+        ok = ok and np.abs(d).max() < 0.5 and np.abs(d).mean() < 0.05 and abs(floor_shift) < 0.05
+    return ok
+
+
+def check_psd():
+    a = psd_case("normal level", [(5781.3, 0.25), (5760, 0.05)], noise=0.004)
+    b = psd_case("low level (gain turned down)", [(5781.3, 0.03), (5760, 0.006)], noise=0.0015)
+    c = psd_case("near full scale", [(5781.3, 0.85), (5760, 0.05)], noise=0.004)
+    return a and b and c
 
 
 def check_sweep(name, chans, carriers, margin=15.0):
@@ -137,7 +150,7 @@ def check_mean(nframes=10, nbins=2112):
 
 
 def main():
-    subprocess.run(["make", "-s", "-C", str(HERE)], check=True)
+    subprocess.run(["make", "-s", "-C", str(HERE), "host_dsp", "host_dsp_ref"], check=True)
     results = [check_psd(), check_mean()]
     results.append(check_sweep("4CH", ["E2", "E1", "F3", "F5"],
                                [(5685.4, 0.20), (5704.2, 0.12), (5780.0, 0.30)]))

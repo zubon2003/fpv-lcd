@@ -43,3 +43,4 @@ tests/fpv_host/host_ui
 tests/fpv_host/obj/
 tests/fpv_host/*.bin
 tests/fpv_host/__pycache__/
+tests/fpv_host/cycles/*.elf

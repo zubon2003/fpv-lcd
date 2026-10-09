@@ -8,16 +8,32 @@
 #define SEG_HOP (N / 2)
 #define FPV_PI 3.14159265358979323846
 
-/* Heap, not .bss: on the C5 the static sections must end below the modem's
- * capture bank (0x40820000), which leaves little room. */
+/* Two FFT kernels:
+ *
+ * default    32-bit only: Q31 twiddles, the product's upper half taken with
+ *            one MULH, and every stage halves (a +- W b) / 2. Data enter at
+ *            up to 2^27 and stay below 2^30, so ~20 bits of precision remain
+ *            after the 10 stages: no measurable loss against the reference.
+ * FPV_FFT_REF the first version: Q30 twiddles, full 64-bit products, no
+ *            per-stage scaling (two multiplies and a carry per product).
+ *
+ * Buffers on the heap, not .bss: on the C5 the static sections must end
+ * below the modem's capture bank (0x40820000), which leaves little room. */
 static int32_t *s_re, *s_im;
 static uint64_t *s_acc;
-static int16_t *s_win;              /* Hann, Q15 */
-static int32_t *s_cos, *s_sin;      /* Q30, W^k = cos - j sin */
+static int32_t *s_win;              /* Hann, Q15 */
+static int32_t *s_cos, *s_sin;      /* W^k = cos - j sin; Q31 (Q30 for REF) */
 static uint16_t *s_rev;
 static int32_t s_log2_lut[257];     /* Q16 log2(1 + i/256) */
-static float s_psd_scale_1seg;      /* 1 / (S^2 * W^2) */
+static float s_psd_scale_1seg;      /* full-scale power per accumulated unit */
 static bool s_ready;
+
+#ifdef FPV_FFT_REF
+#define TW_ONE 1073741824.0         /* Q30 */
+#else
+#define TW_ONE 2147483647.0         /* Q31 (1.0 itself does not fit) */
+#define ACC_SHIFT 4                 /* power >> 4 so 15 segments fit in 64 bits */
+#endif
 
 float dsp_inf(void) {
     union { uint32_t u; float f; } v = { 0x7f800000u };
@@ -39,13 +55,14 @@ bool dsp_init(void) {
         /* numpy.hanning(N): symmetric, 0.5 - 0.5 cos(2 pi k / (N - 1)) */
         double w = 0.5 - 0.5 * cos(2.0 * FPV_PI * k / (N - 1));
         int q = (int)lround(w * 32767.0);
-        s_win[k] = (int16_t)q;
+        s_win[k] = q;
         wsum += q / 32767.0;
     }
     for (int k = 0; k < HALF; k++) {
         double a = 2.0 * FPV_PI * k / N;
-        s_cos[k] = (int32_t)llround(cos(a) * 1073741824.0);
-        s_sin[k] = (int32_t)llround(sin(a) * 1073741824.0);
+        double c = cos(a) * TW_ONE, sn = sin(a) * TW_ONE;
+        s_cos[k] = (int32_t)(c >= TW_ONE ? TW_ONE : llround(c));
+        s_sin[k] = (int32_t)(sn >= TW_ONE ? TW_ONE : llround(sn));
     }
     for (int k = 0; k < N; k++) {
         unsigned r = 0, x = (unsigned)k;
@@ -54,13 +71,22 @@ bool dsp_init(void) {
     }
     for (int i = 0; i <= 256; i++)
         s_log2_lut[i] = (int32_t)lround(log2(1.0 + i / 256.0) * 65536.0);
-    /* x_int = (1024 (v - mean) * w_q15) >> 20 = x_true * 512 * 32767 / 1024 */
+#ifdef FPV_FFT_REF
+    /* x_int = (1024 (v - mean) * w_q15) >> 20 = x_true * 512 * 32767 / 1024;
+     * the FFT does not scale, so X_int = X_true * s. */
     double s = 512.0 * 32767.0 / 1024.0;
     s_psd_scale_1seg = (float)(1.0 / (s * s * wsum * wsum));
+#else
+    /* x_int = 4 (v - mean) w_q15 = x_true * 512 * 32767 * 4, and the ten
+     * halving stages divide by 1024: X_int = X_true * s / 1024. */
+    double s = 512.0 * 32767.0 * 4.0 / 1024.0;
+    s_psd_scale_1seg = (float)((double)(1 << ACC_SHIFT) / (s * s * wsum * wsum));
+#endif
     s_ready = true;
     return true;
 }
 
+#ifdef FPV_FFT_REF
 static void fft_inplace(void) {
     for (int len = 2; len <= N; len <<= 1) {
         int half = len >> 1, step = N / len;
@@ -78,6 +104,29 @@ static void fft_inplace(void) {
         }
     }
 }
+#else
+/* Upper 32 bits of the 64-bit product: a single MULH on RV32. */
+static inline int32_t mulh(int32_t a, int32_t b) { return (int32_t)(((int64_t)a * b) >> 32); }
+
+static void fft_inplace(void) {
+    for (int len = 2; len <= N; len <<= 1) {
+        int half = len >> 1, step = N / len;
+        for (int j = 0; j < half; j++) {
+            int32_t c = s_cos[j * step], s = s_sin[j * step];
+            for (int i = j; i < N; i += len) {
+                int b = i + half;
+                int32_t xr = s_re[b], xi = s_im[b];
+                /* (c - j s)(xr + j xi) / 2 with Q31 c, s */
+                int32_t tr = mulh(c, xr) + mulh(s, xi);
+                int32_t ti = mulh(c, xi) - mulh(s, xr);
+                int32_t ar = s_re[i] >> 1, ai = s_im[i] >> 1;
+                s_re[b] = ar - tr; s_im[b] = ai - ti;
+                s_re[i] = ar + tr; s_im[i] = ai + ti;
+            }
+        }
+    }
+}
+#endif
 
 static inline int32_t iq10_i(uint32_t w) { return (int32_t)(w << 22) >> 22; }
 static inline int32_t iq10_q(uint32_t w) { return (int32_t)((w >> 10) << 22) >> 22; }
@@ -89,6 +138,7 @@ void dsp_hop_psd(const uint32_t *iq, unsigned n, float *psd) {
         const uint32_t *x = iq + seg * SEG_HOP;
         int32_t si = 0, sq = 0;
         for (int k = 0; k < N; k++) { si += iq10_i(x[k]); sq += iq10_q(x[k]); }
+#ifdef FPV_FFT_REF
         for (int k = 0; k < N; k++) {
             /* complex = I - jQ (the reference client's orientation) */
             int64_t vi = (int64_t)(iq10_i(x[k]) * N - si);
@@ -97,10 +147,26 @@ void dsp_hop_psd(const uint32_t *iq, unsigned n, float *psd) {
             s_re[r] = (int32_t)((vi * s_win[k]) >> 20);
             s_im[r] = (int32_t)((-vq * s_win[k]) >> 20);
         }
+#else
+        /* Whole-LSB mean: the fraction left only reaches the bins next to DC,
+         * which the stitcher drops (+-500 kHz). */
+        int32_t mi = (si + N / 2) >> DSP_LOG2N, mq = (sq + N / 2) >> DSP_LOG2N;
+        for (int k = 0; k < N; k++) {
+            /* complex = I - jQ (the reference client's orientation) */
+            int32_t w4 = s_win[k] << 2;
+            int r = s_rev[k];
+            s_re[r] = (iq10_i(x[k]) - mi) * w4;
+            s_im[r] = (mq - iq10_q(x[k])) * w4;
+        }
+#endif
         fft_inplace();
         for (int k = 0; k < N; k++) {
             int64_t a = s_re[k], b = s_im[k];
+#ifdef FPV_FFT_REF
             s_acc[k] += (uint64_t)(a * a + b * b);
+#else
+            s_acc[k] += (uint64_t)(a * a + b * b) >> ACC_SHIFT;
+#endif
         }
     }
     float scale = nseg ? s_psd_scale_1seg / (float)nseg : 0.0f;

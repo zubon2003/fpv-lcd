@@ -4,8 +4,12 @@ CFLAGS ?= -O2 -Wall -Wextra -std=c11 -I$(FPV)
 host_dsp: host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/dsp.h $(FPV)/analysis.h
 	$(CC) $(CFLAGS) -o $@ host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c -lm
 
+# The first (64-bit) FFT, kept for comparison.
+host_dsp_ref: host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/dsp.h $(FPV)/analysis.h
+	$(CC) $(CFLAGS) -DFPV_FFT_REF -o $@ host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c -lm
+
 clean:
-	rm -rf host_dsp host_ui obj iq.bin sweep.bin *.ppm
+	rm -rf host_dsp host_dsp_ref host_ui obj iq.bin sweep.bin *.ppm
 
 # Screen previews: LovyanGFX in memory (Linux framebuffer platform, no device).
 LGFX := ../../components/LovyanGFX/src
