@@ -15,7 +15,7 @@ import numpy as np
 
 REF = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/fpv-band-monitor-c5")
 sys.path.insert(0, str(REF))
-from fpv_band_monitor.analysis import auto_search_halfwidth, measure_all  # noqa: E402
+from fpv_band_monitor.analysis import SpectrumAverager, auto_search_halfwidth, measure_all  # noqa: E402
 from fpv_band_monitor.channels import parse_channels  # noqa: E402
 from fpv_band_monitor.esp_sdr import EspSettings, Stitcher, hop_spectrum_db  # noqa: E402
 from fpv_band_monitor.sweep import FrequencyGrid  # noqa: E402
@@ -116,9 +116,29 @@ def check_sweep(name, chans, carriers, margin=15.0):
     return ok
 
 
+def check_mean(nframes=10, nbins=2112):
+    """10 stored sweeps averaged = PC SpectrumAverager("mean") over them."""
+    lin = 10 ** (rng.uniform(-9, -2, (nframes, nbins)) )
+    lin[rng.random((nframes, nbins)) < 0.05] = np.inf      # bins a sweep missed
+    lin[:, :7] = np.inf                                    # never covered
+    (HERE / "iq.bin").write_bytes(lin.astype(np.float32).tobytes())
+    c = np.frombuffer(run("mean", "iq.bin", nframes, nbins), np.float32)
+    av = SpectrumAverager(window_s=100.0)
+    for t, frame in enumerate(lin):
+        db = np.where(np.isfinite(frame), 10 * np.log10(frame), np.nan).astype(np.float32)
+        py = av.add(float(t), db)
+    cdb = np.where(np.isfinite(c), 10 * np.log10(c), np.nan)
+    both = np.isfinite(cdb) & np.isfinite(py)
+    d = np.abs(cdb - py)[both]
+    mism = int(np.sum(np.isfinite(cdb) != np.isfinite(py)))
+    print(f"\n10-sweep mean: max |C - Python| = {d.max():.4f} dB over {both.sum()} bins, "
+          f"gap mismatches {mism}")
+    return d.max() < 0.01 and mism == 0
+
+
 def main():
     subprocess.run(["make", "-s", "-C", str(HERE)], check=True)
-    results = [check_psd()]
+    results = [check_psd(), check_mean()]
     results.append(check_sweep("4CH", ["E2", "E1", "F3", "F5"],
                                [(5685.4, 0.20), (5704.2, 0.12), (5780.0, 0.30)]))
     results.append(check_sweep("3CH", ["E1", "F1", "F4"],

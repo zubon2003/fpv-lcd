@@ -242,6 +242,7 @@ static void receiver_loop() {
 static UiView *s_viewp;
 #define s_view (*s_viewp)
 static float *s_avg, *s_hold;
+static float *s_ring;          /* FPV_AVG_SWEEPS stored sweeps, SWEEP_MAX_BINS apart */
 static uint32_t *s_scratch;
 static float s_row_lin[COLS];
 
@@ -250,7 +251,7 @@ struct UiState {
     uint32_t seen_seq = 0;
     int64_t last_t_us = 0;
     float period_s = 0;
-    bool first = true;
+    int ring_head = 0, ring_count = 0;   /* stored sweeps for the average */
     bool hold_first = true;
     bool row_open = false;
     int64_t row_t_us = 0;
@@ -262,7 +263,7 @@ struct UiState {
 static UiState s_st;
 
 static void reset_measurement() {
-    s_st.first = true;
+    s_st.ring_count = 0;
     s_st.hold_first = true;
     s_st.row_open = false;
     s_st.row_t_us = 0;
@@ -350,7 +351,7 @@ static void on_hit(Hit hit) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_req.gain = s_set.gain;
         xSemaphoreGive(s_lock);
-        s_st.first = true;          /* new gain: restart the average */
+        s_st.ring_count = 0;        /* new gain: restart the average */
         s_st.hold_first = true;
     }
     settings_save();
@@ -369,10 +370,11 @@ static void ingest_locked(int64_t t_us) {
     if (dt > 0.0005f && dt < 5.0f)
         s_st.period_s = s_st.period_s > 0 ? s_st.period_s + 0.1f * (dt - s_st.period_s) : dt;
 
-    float tau = FPV_AVG_MS / 2000.0f;
-    float a = dt > 0 ? 1.0f - expf(-dt / tau) : 1.0f;
-    an_average(s_avg, s_shared, nb, a, s_st.first);
-    s_st.first = false;
+    /* store this sweep in the ring and average the ones held */
+    memcpy(s_ring + (size_t)s_st.ring_head * SWEEP_MAX_BINS, s_shared, sizeof(float) * nb);
+    s_st.ring_head = (s_st.ring_head + 1) % FPV_AVG_SWEEPS;
+    if (s_st.ring_count < FPV_AVG_SWEEPS) s_st.ring_count++;
+    an_mean_frames(s_avg, s_ring, SWEEP_MAX_BINS, s_st.ring_count, nb);
     if (s_view.hold_on) {
         an_peak_hold(s_hold, s_shared, nb, s_st.hold_first);
         s_st.hold_first = false;
@@ -575,8 +577,9 @@ static void alloc_buffers() {
     s_avg = (float *)big_alloc(sizeof(float) * SWEEP_MAX_BINS);
     s_hold = (float *)big_alloc(sizeof(float) * SWEEP_MAX_BINS);
     s_scratch = (uint32_t *)big_alloc(sizeof(uint32_t) * SWEEP_MAX_BINS);
+    s_ring = (float *)big_alloc(sizeof(float) * SWEEP_MAX_BINS * FPV_AVG_SWEEPS);   /* 92 KB */
     void *v = big_alloc(sizeof(UiView));
-    if (!s_psd || !s_work || !s_shared || !s_avg || !s_hold || !s_scratch || !v)
+    if (!s_psd || !s_work || !s_shared || !s_avg || !s_hold || !s_scratch || !s_ring || !v)
         halt("out of memory");
     s_viewp = new (v) UiView();
 }

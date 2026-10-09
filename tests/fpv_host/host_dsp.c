@@ -37,6 +37,13 @@ int main(int argc, char **argv) {
         fwrite(psd, sizeof(float), DSP_NFFT, stdout);
         return 0;
     }
+    if (!strcmp(argv[1], "mean") && argc >= 5) {
+        int nb = atoi(argv[4]);
+        float *avg = malloc(sizeof(float) * (size_t)nb);
+        an_mean_frames(avg, (const float *)iq, nb, (int)n, nb);
+        fwrite(avg, sizeof(float), (size_t)nb, stdout);
+        return 0;
+    }
     if (strcmp(argv[1], "sweep") || argc < 10) return 1;
     sweep_plan_t p;
     if (sweep_plan(&p, (float)atof(argv[4]), (float)atof(argv[5]), atoi(argv[6]))) return 3;

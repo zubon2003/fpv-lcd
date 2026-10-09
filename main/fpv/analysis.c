@@ -169,11 +169,15 @@ float an_auto_search(const int *f, int n, float requested) {
     return best < requested ? best : requested;
 }
 
-void an_average(float *avg, const float *x, int n, float a, bool first) {
+void an_mean_frames(float *avg, const float *frames, int stride, int nframes, int n) {
     for (int k = 0; k < n; k++) {
-        if (!dsp_valid(x[k])) { if (first) avg[k] = x[k]; continue; }
-        if (first || !dsp_valid(avg[k])) avg[k] = x[k];
-        else avg[k] += a * (x[k] - avg[k]);
+        float sum = 0.0f;
+        int count = 0;
+        for (int f = 0; f < nframes; f++) {
+            float x = frames[(size_t)f * stride + k];
+            if (dsp_valid(x)) { sum += x; count++; }
+        }
+        avg[k] = count ? sum / (float)count : dsp_inf();
     }
 }
 

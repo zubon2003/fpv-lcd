@@ -49,8 +49,10 @@ void an_measure(const float *lin, const sweep_plan_t *plan, float nominal_mhz,
 /* Shrink the search window so neighbouring channels cannot steal a peak. */
 float an_auto_search(const int *freqs_mhz, int n, float requested);
 
-/* EMA of linear power: avg += a (x - avg). first=true copies. */
-void an_average(float *avg, const float *x, int n, float a, bool first);
+/* Mean of the linear powers of nframes stored sweeps (frame f starts at
+ * frames + f * stride); a bin no sweep has covered stays +INF. Same as the
+ * PC version's SpectrumAverager("mean") over the sweeps it holds. */
+void an_mean_frames(float *avg, const float *frames, int stride, int nframes, int n);
 void an_peak_hold(float *hold, const float *x, int n, bool first);
 
 /* Max of the valid bins of [k0, k1) in each of ncols columns -> dB (NAN). */

@@ -38,7 +38,7 @@
 #define FPV_MARGIN_MHZ 15.0f    /* span beyond the outer channels / 1ch span */
 
 /* Measurement (fpv-band-monitor-c5 defaults). */
-#define FPV_AVG_MS 3000.0f      /* averaging window (EMA with tau = half) */
+#define FPV_AVG_SWEEPS 10       /* measurement = mean of the last N sweeps */
 #define FPV_SMOOTH 0.3f         /* EMA on the displayed centre */
 #define FPV_DEV_OK_MHZ 0.5f     /* deviation shown blue up to this */
 #define FPV_DEV_WARN_MHZ 1.0f   /* red from this; yellow in between */
