@@ -1,0 +1,15 @@
+# Stand-alone FPV band monitor: XIAO ESP32-C5 (8 MB flash) + ILI9341/XPT2046.
+# Build: idf.py -B build-fpv -D FPV_LCD_MONITOR=ON -D SDKCONFIG=build-fpv/sdkconfig \
+#   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32c5;sdkconfig.defaults.fpv-lcd" \
+#   set-target esp32c5 build
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+# GPIO11/12 stay free: no UART0 bridge in this build.
+CONFIG_ESP_SDR_UART_ENABLED=n
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+# PSRAM (8 MB on the XIAO ESP32-C5) holds the display buffers. Plain malloc
+# stays internal; boot continues without PSRAM (smaller boards).
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y

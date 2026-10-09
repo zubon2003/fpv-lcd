@@ -1,0 +1,49 @@
+"""Render the three monitor screens from synthetic captures (firmware DSP and
+drawing code, run on the PC) into PNG files.
+
+    python3 render_previews.py /path/to/fpv-band-monitor-c5 [out_dir]
+"""
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+sys.argv += [] if len(sys.argv) > 1 else ["/tmp/fpv-band-monitor-c5"]
+import check_dsp as cd  # noqa: E402  (shares the capture model)
+
+HERE = Path(__file__).resolve().parent
+OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else HERE / "previews"
+
+SCENES = [
+    # mode, file, channels, carriers (MHz, amplitude)
+    (0, "4ch", ["E2", "E1", "F3", "F5"], [(5685.4, 0.20), (5704.2, 0.12), (5780.0, 0.30)]),
+    (1, "3ch", ["E1", "F1", "F3"], [(5705.6, 0.15), (5739.1, 0.25), (5781.0, 0.08)]),
+    (2, "1ch", ["F3"], [(5780.7, 0.20)]),
+]
+
+
+def main():
+    subprocess.run(["make", "-s", "-C", str(HERE), "host_dsp", "host_ui"], check=True)
+    OUT.mkdir(exist_ok=True)
+    for mode, name, chans, carriers in SCENES:
+        freqs = [cd.parse_channels(c)[0].freq_mhz for c in chans]
+        start, stop = min(freqs) - 15.0, max(freqs) + 15.0
+        st = cd.Stitcher(start, stop, cd.EspSettings(step_mhz=25, usable_mhz=28.0, dc_khz=500.0), 78125)
+        words = [cd.capture(lo, carriers)[0] for lo in st.los]
+        (HERE / "iq.bin").write_bytes(np.concatenate(words).tobytes())
+        cd.run("sweep", "iq.bin", cd.N, start, stop, 25, 28.0, 500.0, *[int(f) for f in freqs])
+        ppm = HERE / f"{name}.ppm"
+        r = subprocess.run([str(HERE / "host_ui"), str(mode), "sweep.bin", str(start), str(stop),
+                            str(ppm), "1" if mode == 2 else "0", *chans],
+                           check=True, capture_output=True, text=True, cwd=HERE)
+        print(r.stdout.strip())
+        img = Image.open(ppm)
+        img.save(OUT / f"screen_{name}.png")
+        img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(OUT / f"screen_{name}_x2.png")
+        ppm.unlink()
+
+
+if __name__ == "__main__":
+    main()

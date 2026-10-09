@@ -198,11 +198,13 @@ static bool acquire_iq(unsigned n,unsigned divider,unsigned *capture_us) {
     return true;
 }
 
+#if !FPV_LCD_MONITOR  /* the monitor build drops the SPEC protocol to fit SRAM */
 static bool spectrum_acquire(unsigned n, unsigned rate, const uint32_t **data, unsigned *elapsed) {
     bool ok = acquire_iq(n, rate, elapsed);
     *data = IQ_BUFFER;
     return ok;
 }
+#endif
 
 #include "ring_probe.h"
 
@@ -247,6 +249,41 @@ static bool ring_test(const char *line) {
 
 static void handle_command(char *line);
 
+#if FPV_LCD_MONITOR
+/* ---- In-firmware API for the LCD band monitor (main/fpv) -------------------
+ * The same steps the USB protocol performs for FREQ / BANDWIDTH / GAIN /
+ * CAP20, without the serial round trip. Only called from the monitor's
+ * receiver task, which owns the radio exclusively. */
+#include "fpv/sdr_hw.h"
+bool sdr_hw_tune(unsigned mhz) {
+    if(!frequency_valid(mhz))return false;
+    if(mhz!=frequency_mhz || !rx_ready){frequency_mhz=mhz;rx_ready=false;prepare_rx();}
+    return true;
+}
+void sdr_hw_bandwidth(unsigned mhz) {
+    /* 0 = widest analog filter; same as "BANDWIDTH 0". */
+    rx_analog_filter=rx_bandwidth_dcap(mhz);
+#if CONFIG_IDF_TARGET_ESP32C5
+    unsigned mode=rx_bandwidth_phy_mode(mhz);
+    if(mode!=rx_channel_mode){rx_channel_mode=mode;rx_ready=false;prepare_rx();}
+#endif
+}
+void sdr_hw_gain(int index) {
+    if(index<0)gain_mode=GAIN_HARDWARE;
+    else {gain_mode=GAIN_MANUAL;gain_code=(unsigned)index;}
+    gain_apply();
+}
+int sdr_hw_gain_max(void) { return (int)gain_max(); }
+bool sdr_hw_capture(unsigned n, const uint32_t **iq) {
+    unsigned us;
+    if(n<256)n=256;
+    if(n>IQ_WORDS)n=IQ_WORDS;
+    if(!acquire_iq(n,0,&us))return false;   /* rate code 0 = 80 MS/s */
+    *iq=IQ_BUFFER;
+    return true;
+}
+#endif
+
 void app_main(void) {
 
     esp_log_level_set("*",ESP_LOG_NONE);
@@ -274,6 +311,10 @@ void app_main(void) {
     (void)usb_serial_jtag_wait_tx_done(pdMS_TO_TICKS(100));
     ESP_ERROR_CHECK(usb_serial_jtag_driver_uninstall());
     burst_serial_init();
+#if FPV_LCD_MONITOR
+    /* Stand-alone FPV band monitor on an SPI LCD: never returns. */
+    fpv_monitor_main();
+#endif
     char line[128];int owner=-1;int64_t lease_deadline=0;
     for(;;) {
         if(esp_timer_get_time()>=lease_deadline)owner=-1;
@@ -298,7 +339,9 @@ static void handle_command(char *line) {
 #if CONFIG_IDF_TARGET_ESP32C61 || CONFIG_IDF_TARGET_ESP32C6
     if(ring_test(line))return;
 #endif
+#if !FPV_LCD_MONITOR
     if (spectrum_command(line, frequency_mhz, spectrum_acquire)) return;
+#endif
     if(!strcmp(line,"RELEASE")){reply("OK\n");return;}
     if(!strcmp(line,"TRANSPORT?")) {
         char h[64];snprintf(h,sizeof(h),"TRANSPORT %s %u\n",

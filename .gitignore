@@ -33,3 +33,13 @@ Thumbs.db
 
 # CI SDK checkout
 /.esp-idf/
+
+# LCD monitor build trees
+build-fpv/
+build-plain/
+components/LovyanGFX/
+tests/fpv_host/host_dsp
+tests/fpv_host/host_ui
+tests/fpv_host/obj/
+tests/fpv_host/*.bin
+tests/fpv_host/__pycache__/

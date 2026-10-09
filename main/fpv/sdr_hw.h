@@ -1,0 +1,26 @@
+/* Radio access for the LCD band monitor, implemented in the C5 receiver
+ * (main/families/c5_c6_c61/receiver.c). Not thread-safe: one caller only. */
+#pragma once
+#include <stdbool.h>
+#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Retune the LO to a whole MHz (recalibrates the RX path when it changes). */
+bool sdr_hw_tune(unsigned mhz);
+/* Analog filter in MHz; 0 = widest (what the PC monitor uses). */
+void sdr_hw_bandwidth(unsigned mhz);
+/* Manual gain-table index (not dB), or -1 for the hardware AGC. */
+void sdr_hw_gain(int index);
+int sdr_hw_gain_max(void);
+/* One 80 MS/s snapshot of n IQ10 words (I bits 0..9, Q bits 10..19). The
+ * pointer stays valid until the next capture. */
+bool sdr_hw_capture(unsigned n, const uint32_t **iq);
+
+/* Entry point of the monitor; called from app_main, never returns. */
+void fpv_monitor_main(void);
+
+#ifdef __cplusplus
+}
+#endif

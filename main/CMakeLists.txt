@@ -62,10 +62,30 @@ if(IDF_TARGET STREQUAL "esp32c61" OR IDF_TARGET STREQUAL "esp32s31")
     list(APPEND sources "common/burst_gain_table.c")
 endif()
 
+# Stand-alone LCD band monitor (main/fpv): ESP32-C5 + ILI9341/XPT2046.
+# A build property, not a Kconfig option: requirements are collected before
+# sdkconfig is loaded, and the monitor adds LovyanGFX to them.
+idf_build_get_property(fpv_lcd FPV_LCD_MONITOR)
+set(fpv_includes)
+if(fpv_lcd)
+    if(NOT IDF_TARGET STREQUAL "esp32c5")
+        message(FATAL_ERROR "FPV_LCD_MONITOR needs the ESP32-C5 (the only 5 GHz receiver)")
+    endif()
+    # The monitor never runs the USB SPEC protocol; dropping its 26 KB of
+    # static buffers keeps .bss below the modem's capture bank.
+    list(REMOVE_ITEM sources "common/spectrum.c")
+    list(APPEND sources "fpv/channels.c" "fpv/dsp.c" "fpv/analysis.c" "fpv/ui.cpp" "fpv/monitor.cpp")
+    list(APPEND dependencies LovyanGFX nvs_flash esp_driver_spi)
+    list(APPEND fpv_includes "." "fpv")
+endif()
+
 idf_component_register(SRCS "${receiver}" ${sources}
     LDFRAGMENTS ${fragments}
-    PRIV_INCLUDE_DIRS "common" ${target_includes} "diagnostics"
+    PRIV_INCLUDE_DIRS "common" ${target_includes} "diagnostics" ${fpv_includes}
     REQUIRES ${dependencies})
+if(fpv_lcd)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE FPV_LCD_MONITOR=1)
+endif()
 
 # Regenerate at build time (not only CMake configure time). The embedded record
 # is also the artifact exporter's source of revision and UTC build time.
