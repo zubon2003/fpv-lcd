@@ -7,7 +7,7 @@
 
 - ESP-SDR（ESPARGOS/esp-sdr, e74f2a4 から分岐）に、XIAO ESP32-C5 単体で動く FPV 5.8 GHz（FM-ATV）バンドモニタを追加したファーム。
 - 対になる PC 版は別リポジトリ `fpv-band-monitor-c5`（ブランチ `lcd-firmware-stream`）。同じファームで PC 版にも液晶にも対応する。
-- 追加コードは `main/fpv/`。ESP-SDR 側の変更は `main/families/c5_c6_c61/receiver.c`（`#if FPV_LCD_MONITOR` の `sdr_hw_*` と起動分岐）と CMake だけ。
+- 追加コードは `main/fpv/`。ESP-SDR 側の変更は `main/families/c5_c6_c61/receiver.c`（`#if FPV_LCD_MONITOR` の `sdr_hw_*` と起動分岐、DC キャッシュの呼び出し）、`main/common/rx_recalibration*.{c,h}` と `rx_calibration_state.c`（DC キャッシュ、`#if FPV_LCD_MONITOR`）、CMake だけ。
 
 ## ビルド
 
@@ -29,6 +29,8 @@
 - C5 には FPU が無い：DSP は整数（1024 点 FFT、Q31 係数、MULH、段ごとに 1/2）。旧 64bit 版は `FPV_FFT_REF` で残してある。
 - `-Werror`：snprintf の切り詰め警告に注意（バッファは余裕を持たせる）。C++ では `gpio_config_t` を指定子初期化しない。
 - monitor ビルドでは `common/spectrum.c`（SPEC）を外している。
+- **DC キャッシュ**（`rx_recalibrate_cached`、FPV ビルドのみ）：upstream は周波数を変えるたびに DC を測り直す（AGC 発振対策、upstream #5/#6/#9）。5 GHz では 1 回 27〜30 ms で、掃引の 7 割を占めていた。LO ごとに `phy_param` の DC 部分（+288, +384〜639, +714, +912〜975 の 324 バイト）を heap に保存し、2 回目からは書き戻して `phy_set_rx_gain_table` だけ呼ぶ（約 1 ms）。PHY が裏で DC を測り直したら（自分以外で `dc_generation` が進んだら）と 30 秒で捨てる。範囲は CALPROBE で `phy_param` の差分から決めたもの：**ESP-IDF を上げたら `-D FPV_CALPROBE=ON` で測り直す**（`CALPROBE <MHz>` = 段階ごとの時間と変わったバイト、`CALCACHE 0|1` = A/B）。
+- このPCの環境：ESP-IDF 25fe69f は `C:\esp\idf-25fe69f`（v6.0.2 の `C:\esp\v6.0.2` とは別）。`python` が 3.9 を指すので、export.ps1 の前に Python 3.13 を PATH の先頭に置く。
 
 ## テスト（ホスト、ESP-IDF 不要）
 
@@ -54,12 +56,15 @@
 - 3.5" ResTouch：ILI9488 を 16bit 送信（`dlen_16bit`）+ RGB565 に固定した `Panel_ResTouch35`。色反転（`FPV_LCD_INVERT`）、SPI 20 MHz、初期化が実機で合うか。
 - ResTouch の電源を電池（BAT+→VSYS）で取ったときの安定性とスリープ電流。必要なら VSYS のロードスイッチ。
 - 下駄基板：Pico の寸法（列間 17.78 mm、1 番ピン端から 1.37 mm）と XIAO ピン配置は標準値からの作図。実物合わせ未確認。ResTouch 上の Pico の向き（USB 側が基板の外か）も未確認。
-- 掃引速度（見積もり：4CH 5.0〜6.4 / 3CH 6.2〜7.8 / 1CH 9.4〜12 sweeps/s）と NOLCD でどれだけ上がるか。PC 版 `--info --nolcd` で測れる。
+- 掃引速度：実測（2026-10-09、3.5"、PC の 4CH 相当 9 ホップ）は DC キャッシュ前 1.34 / NOLCD 2.47、**後 2.96 / NOLCD 6.3 sweeps/s**。液晶ありは描画（約 0.18 s/掃引）が次の律速。
+- 3.5" ResTouch の表示・タッチ・ゲイン 25 は実機で動作（2026-10-10、2 台目の XIAO）。書き込み後に RTS リセットで抜けないときは watchdog リセットか RESET ボタン。
+- 5833 MHz 以上の LO ではホップ端（±23〜27 MHz）が −2〜−4 dB 落ち、min 合成で LO 位置（5807, 5833, 5858 など）に谷が出る。upstream の C5 帯域は全幅約 48 MHz（±24）。対策案：近い方のホップを使い 6 dB 以上高いときだけ min（未実装）。
 - 消費電流（見積もり：2.8" 150〜190 mA、3.5" 220〜280 mA、NOLCD 約 100 mA、スリープ 30〜100 µA）。
 - さらに速くするなら FFT の radix-4 化が次の候補。
 
 ## コミット
 
-- 作者は中立名 `fpv-lcd <fpv-lcd@localhost>` で作ってきた（ユーザーの git 設定に合わせて変えてよい）。
+- 2026-10-10 から作者はユーザーの git 設定（zubon2003）。それ以前は中立名 `fpv-lcd <fpv-lcd@localhost>`。
+- ゲインの既定は 25（ユーザー指定）。
 - GitHub にはまだ push していない。push はユーザーに確認してから。
 - ライセンスは ESP-SDR に合わせて GPL-3.0。
