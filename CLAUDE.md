@@ -26,6 +26,7 @@
 ## ウェブ書き込み（GitHub Pages）
 
 - https://zubon2003.github.io/fpv-lcd/ … `web/`（ESP Web Tools 10.4.0、ESP32-C5 対応）。`.github/workflows/pages.yml` が `web/**` の push で公開する。
+- upstream の CI（`firmware.yml`、`rebuild-site.yml`）はこのリポジトリでは GitHub 上で無効にしてある（ファイルは upstream と合わせるため残す）。
 - ファームは CI でビルドしていない。手元で 2.8"（`build-fpv`）と 3.5"（`build-fpv35`）をビルドし、各ビルドフォルダで
   `python -m esptool --chip esp32c5 merge-bin -o <repo>/web/firmware/fpv-lcd-xiao-c5-{ili9341,restouch35}.bin @flash_args`、
   `web/manifest-*.json` と `index.html` の `version`（ソースのコミット）を書き換えてコミットする。
