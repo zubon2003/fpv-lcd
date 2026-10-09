@@ -109,6 +109,7 @@ struct Settings {
     uint8_t mode = MODE_4CH;
     uint8_t single = 3;          /* 1CH: index into SINGLE_CHANNELS (F3) */
     int8_t gain = FPV_DEFAULT_GAIN;
+    uint8_t snr = FPV_DEFAULT_SNR_DB;   /* detection threshold */
 };
 static Settings s_set;
 static const char *NVS_NS = "fpvmon";
@@ -119,7 +120,7 @@ static void settings_load() {
     Settings t;
     size_t n = sizeof(t);
     if (nvs_get_blob(h, "set", &t, &n) == ESP_OK && n == sizeof(t) && t.mode < MODE_COUNT &&
-        t.single < NUM_SINGLE)
+        t.single < NUM_SINGLE && t.snr >= FPV_SNR_MIN_DB && t.snr <= FPV_SNR_MAX_DB)
         s_set = t;
     nvs_close(h);
 }
@@ -369,6 +370,7 @@ static void apply_settings() {
     sweep_plan(&s_view.plan, lo - FPV_MARGIN_MHZ, hi + FPV_MARGIN_MHZ, FPV_STEP_MHZ);
     s_st.search_mhz = an_auto_search(freqs, l.n, 8.0f);
     s_view.gain = s_set.gain;
+    s_view.snr_db = s_set.snr;
     reset_measurement();
 
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -383,49 +385,92 @@ static void flash_message(const char *m) {
     s_st.message_until_us = esp_timer_get_time() + 900000;
 }
 
+static void set_gain_now(int gain) {
+    s_view.gain = gain;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_req.gain = gain;
+    xSemaphoreGive(s_lock);
+    an_ring_reset(&s_avg_ring, s_view.plan.nbins);   /* new gain: restart the average */
+    s_st.hold_first = true;
+}
+
+/* Main screen taps (the setup screen is handled in ui_task). */
 static void on_hit(Hit hit) {
-    bool replan = false, regain = false;
     switch (hit) {
-    case HIT_MODE:
+    case HIT_MODE:                       /* 4CH -> 3CH -> 1CH -> 4CH */
         s_set.mode = (uint8_t)((s_set.mode + 1) % MODE_COUNT);
-        replan = true;
-        break;
-    case HIT_GAIN_DOWN:
-        if (s_set.gain < 0) s_set.gain = 60;
-        else if (s_set.gain >= 5) s_set.gain -= 5;
-        regain = true;
-        break;
-    case HIT_GAIN_UP:
-        if (s_set.gain >= 0) s_set.gain = s_set.gain + 5 > 60 ? -1 : s_set.gain + 5;  /* past 60 = AGC */
-        regain = true;
-        break;
+        apply_settings();
+        s_ui.draw_all(s_view);
+        settings_save();
+        return;
     case HIT_HOLD:
         s_view.hold_on = !s_view.hold_on;
         s_st.hold_first = true;
-        break;
+        return;
     case HIT_CH_PREV:
     case HIT_CH_NEXT: {
         int step = hit == HIT_CH_NEXT ? 1 : NUM_SINGLE - 1;
         s_set.single = (uint8_t)((s_set.single + step) % NUM_SINGLE);
-        replan = true;
-        break;
+        apply_settings();
+        s_ui.draw_all(s_view);
+        settings_save();
+        return;
     }
     default:
         return;
     }
-    if (replan) {
-        apply_settings();
-        s_ui.draw_all(s_view);
+}
+
+static void calibrate_touch();
+
+/* ---------------------------------------------------------- setup screen */
+static Settings s_edit;          /* what the setup screen shows / edits */
+
+static SetupView setup_view() {
+    SetupView sv;
+    fpv_channel_t c;
+    fpv_channel_parse(SINGLE_CHANNELS[s_edit.single], &c);
+    sv.mode = (Mode)s_edit.mode;
+    sv.single_name = SINGLE_CHANNELS[s_edit.single];
+    sv.single_mhz = c.freq_mhz;
+    sv.gain = s_edit.gain;
+    sv.snr_db = s_edit.snr;
+    sv.bat_mv = s_bat_mv;
+    return sv;
+}
+
+/* Returns true when the setup screen closes. */
+static bool on_setup_hit(SetupHit h) {
+    switch (h) {
+    case SH_MODE_4: s_edit.mode = MODE_4CH; break;
+    case SH_MODE_3: s_edit.mode = MODE_3CH; break;
+    case SH_MODE_1: s_edit.mode = MODE_1CH; break;
+    case SH_CH_PREV: s_edit.single = (uint8_t)((s_edit.single + NUM_SINGLE - 1) % NUM_SINGLE); break;
+    case SH_CH_NEXT: s_edit.single = (uint8_t)((s_edit.single + 1) % NUM_SINGLE); break;
+    case SH_GAIN_DOWN:          /* AGC -> 60 -> ... -> 0 */
+        s_edit.gain = s_edit.gain < 0 ? FPV_GAIN_MAX : (s_edit.gain > 0 ? s_edit.gain - 1 : 0);
+        break;
+    case SH_GAIN_UP:            /* ... -> 60 -> AGC */
+        if (s_edit.gain >= 0) s_edit.gain = s_edit.gain >= FPV_GAIN_MAX ? -1 : s_edit.gain + 1;
+        break;
+    case SH_SNR_DOWN: if (s_edit.snr > FPV_SNR_MIN_DB) s_edit.snr--; break;
+    case SH_SNR_UP: if (s_edit.snr < FPV_SNR_MAX_DB) s_edit.snr++; break;
+    case SH_CAL: calibrate_touch(); break;
+    case SH_DONE: {
+        bool replan = s_edit.mode != s_set.mode ||
+                      (s_edit.mode == MODE_1CH && s_edit.single != s_set.single);
+        bool regain = s_edit.gain != s_set.gain;
+        s_set = s_edit;
+        settings_save();
+        s_view.snr_db = s_set.snr;
+        if (replan) apply_settings();          /* also sends the gain */
+        else if (regain) set_gain_now(s_set.gain);
+        return true;
     }
-    if (regain) {
-        s_view.gain = s_set.gain;
-        xSemaphoreTake(s_lock, portMAX_DELAY);
-        s_req.gain = s_set.gain;
-        xSemaphoreGive(s_lock);
-        an_ring_reset(&s_avg_ring, s_view.plan.nbins);   /* new gain: restart the average */
-        s_st.hold_first = true;
+    default: break;
     }
-    settings_save();
+    s_ui.draw_setup(setup_view());
+    return false;
 }
 
 static void clear_all() {
@@ -477,6 +522,7 @@ static void measure_and_level() {
     an_params_t prm;
     an_default_params(&prm);
     prm.search_mhz = s_st.search_mhz;
+    prm.min_snr_db = (float)s_set.snr;
     float floor_db = an_floor_db(s_avg, s_view.plan.nbins, s_scratch);
     s_view.floor_db = floor_db;
     float top = floor_db;
@@ -577,8 +623,10 @@ static void ui_task(void *) {
     s_ui.draw_all(s_view);
 
     bool touching = false, long_done = false;
-    int64_t touch_t0 = 0;
+    int64_t touch_t0 = 0, t_repeat = 0;
     Hit touch_hit = HIT_NONE;
+    bool in_setup = false;                /* the setup screen is up */
+    SetupHit setup_touch = SH_NONE;
     /* Partial updates: the SPI transfer is most of the drawing cost, and the
      * CPU waits for it. Spectrum at most 10/s, waterfall when it gains a row,
      * readouts 4/s, header once a second or when a setting changes. */
@@ -611,13 +659,40 @@ static void ui_task(void *) {
         int32_t tx, ty;
         bool t = s_lcd.getTouch(&tx, &ty);
         int64_t now = esp_timer_get_time();
-        if (t && !touching) {
+        if (in_setup) {
+            /* setup screen: act on press, repeat steppers while held */
+            bool close = false;
+            if (t && !touching) {
+                touching = true;
+                touch_t0 = t_repeat = now;
+                setup_touch = setup_hit((int)tx, (int)ty);
+                close = on_setup_hit(setup_touch);
+            } else if (t && touching && setup_repeats(setup_touch) && now - touch_t0 > 500000 &&
+                       now - t_repeat > 120000) {
+                t_repeat = now;
+                close = on_setup_hit(setup_touch);
+            } else if (!t && touching) {
+                touching = false;
+            }
+            if (close) {
+                in_setup = false;
+                s_lcd.fillScreen(TFT_BLACK);
+                s_ui.draw_axis(s_view);
+                draw_all_now(now);
+            }
+        } else if (t && !touching) {
             touching = true;
             long_done = false;
             touch_t0 = now;
             touch_hit = hit_test(s_view, (int)tx, (int)ty);
-            if (touch_hit != HIT_PLOT) on_hit(touch_hit);
-            draw_all_now(now);
+            if (touch_hit == HIT_SETUP) {
+                in_setup = true;
+                s_edit = s_set;
+                s_ui.draw_setup(setup_view());
+            } else {
+                if (touch_hit != HIT_PLOT) on_hit(touch_hit);
+                draw_all_now(now);
+            }
         } else if (t && touching && touch_hit == HIT_PLOT && !long_done && now - touch_t0 > 800000) {
             long_done = true;                         /* long press on the plot */
             clear_all();
@@ -646,6 +721,7 @@ static void ui_task(void *) {
             }
         }
         if (spec_pending && now - t_spec >= 100000) spec_due = true;
+        if (in_setup) continue;               /* keep measuring, draw nothing */
         if (spec_due) { s_ui.draw_spectrum(s_view); t_spec = now; spec_pending = false; }
         if (s_st.wf_dirty) { s_ui.draw_waterfall(s_view); s_st.wf_dirty = false; }
         if (s_view.have_data && now - t_ro >= 250000) { s_ui.draw_readouts(s_view); t_ro = now; }

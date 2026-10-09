@@ -43,6 +43,15 @@ def main():
         img.save(OUT / f"screen_{name}.png")
         img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(OUT / f"screen_{name}_x2.png")
         ppm.unlink()
+        if mode == 0:                          # setup screen too
+            ppm = HERE / "setup.ppm"
+            subprocess.run([str(HERE / "host_ui"), str(mode), "sweep.bin", str(start), str(stop),
+                            str(ppm), "0", *chans], check=True, capture_output=True, cwd=HERE,
+                           env={"FPV_SETUP": "0"})
+            img = Image.open(ppm)
+            img.save(OUT / "screen_setup.png")
+            img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(OUT / "screen_setup_x2.png")
+            ppm.unlink()
 
 
 if __name__ == "__main__":

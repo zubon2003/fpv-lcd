@@ -95,6 +95,10 @@ int main(int argc, char **argv) {
     Renderer r;
     if (!r.begin(&screen)) { fprintf(stderr, "sprites\n"); return 4; }
     r.draw_all(v);
+    if (getenv("FPV_SETUP")) {                 /* the setup screen instead */
+        SetupView sv{(Mode)atoi(getenv("FPV_SETUP")), "F3", 5780, 40, 18, v.bat_mv};
+        r.draw_setup(sv);
+    }
 
     FILE *o = fopen(out, "wb");
     fprintf(o, "P6\n%d %d\n255\n", SCR_W, SCR_H);

@@ -48,10 +48,14 @@
 #define FPV_USABLE_MHZ 28.0f    /* kept half-width of each hop */
 #define FPV_DC_KHZ 500.0f       /* dropped around each LO */
 #define FPV_DEFAULT_GAIN 40     /* gain-table index; 55+ saturates on the C5 */
+#define FPV_GAIN_MAX 60         /* setup screen: one step past this = AGC */
 #define FPV_MARGIN_MHZ 15.0f    /* span beyond the outer channels / 1ch span */
 
 /* Measurement (fpv-band-monitor-c5 defaults). */
 #define FPV_AVG_SWEEPS 10       /* measurement = mean of the last N sweeps */
+#define FPV_DEFAULT_SNR_DB 18   /* signal present: peak this far above the floor */
+#define FPV_SNR_MIN_DB 6
+#define FPV_SNR_MAX_DB 30
 #define FPV_SMOOTH 0.3f         /* EMA on the displayed centre */
 #define FPV_DEV_OK_MHZ 0.5f     /* deviation shown blue up to this */
 #define FPV_DEV_WARN_MHZ 1.0f   /* red from this; yellow in between */

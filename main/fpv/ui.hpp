@@ -45,6 +45,7 @@ struct UiView {
     float floor_db = __builtin_nanf("");
     float sweeps_per_s = 0;
     int gain = 40;               /* -1 = AGC */
+    int snr_db = 18;             /* detection threshold */
     unsigned rx_errors = 0;
     int bat_mv = 0;                /* 0 unknown, < FPV_BAT_ABSENT_MV: USB */
     const char *message = nullptr;  /* overlay text, e.g. "clear" */
@@ -53,11 +54,29 @@ struct UiView {
 /* Waterfall code: dB = -128 + code / 2. */
 uint8_t wf_code(float db);
 
+/* Main screen header: [mode] (4CH -> 3CH -> 1CH) ... [SET] [HOLD]; the plots
+ * take a long press (clear); 1CH has < > in the readout. */
 enum Hit : uint8_t {
-    HIT_NONE = 0, HIT_MODE, HIT_GAIN_DOWN, HIT_GAIN_UP, HIT_HOLD,
-    HIT_PLOT, HIT_CH_PREV, HIT_CH_NEXT,
+    HIT_NONE = 0, HIT_MODE, HIT_SETUP, HIT_HOLD, HIT_PLOT, HIT_CH_PREV, HIT_CH_NEXT,
 };
 Hit hit_test(const UiView &v, int x, int y);
+
+/* Setup screen: big buttons (45 px rows, about 8 mm). */
+struct SetupView {
+    Mode mode;
+    const char *single_name;   /* 1CH channel, e.g. "F3" */
+    int single_mhz;
+    int gain;                  /* -1 = AGC */
+    int snr_db;
+    int bat_mv;
+};
+enum SetupHit : uint8_t {
+    SH_NONE = 0, SH_DONE, SH_CAL, SH_MODE_4, SH_MODE_3, SH_MODE_1,
+    SH_CH_PREV, SH_CH_NEXT, SH_GAIN_DOWN, SH_GAIN_UP, SH_SNR_DOWN, SH_SNR_UP,
+};
+SetupHit setup_hit(int x, int y);
+/* buttons that repeat while held */
+inline bool setup_repeats(SetupHit h) { return h >= SH_CH_PREV; }
 
 class Renderer {
 public:
@@ -71,6 +90,8 @@ public:
     void draw_axis(const UiView &v);
     void draw_waterfall(const UiView &v);
     void draw_readouts(const UiView &v);
+    /* setup screen, drawn straight onto the LCD */
+    void draw_setup(const SetupView &s);
 
 private:
     void readout_box(const UiView &v, const UiChannel &c, int x, int w);

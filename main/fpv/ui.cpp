@@ -92,15 +92,17 @@ static uint8_t dev_colour(float off) {
 }
 
 /* -------------------------------------------------------------- hit test */
-/* Header: [MODE 0..47] status [GAIN 214..275: -|+] [HOLD 278..319] */
-constexpr int MODE_X1 = 48, GAIN_X0 = 214, GAIN_X1 = 276, HOLD_X0 = 278;
-constexpr int ARROW_W = 34;   /* 1ch readout: < and > buttons */
+/* Header: [MODE 0..63] status battery [SET 196..255] [HOLD 258..319]. Taps
+ * reach 24 px below it (about 7 mm in all) so a fingertip can hit them. */
+constexpr int MODE_X1 = 64, BAT_X1 = 192, SET_X0 = 196, SET_X1 = 256, HOLD_X0 = 258;
+constexpr int HDR_TAP_H = HDR_H + 24;
+constexpr int ARROW_W = 44;   /* 1ch readout: < and > buttons (8 mm) */
 
 Hit hit_test(const UiView &v, int x, int y) {
-    if (y < HDR_H + 8) {
-        if (x < MODE_X1 + 4) return HIT_MODE;
-        if (x >= GAIN_X0 && x < GAIN_X1) return x < (GAIN_X0 + GAIN_X1) / 2 ? HIT_GAIN_DOWN : HIT_GAIN_UP;
-        if (x >= HOLD_X0) return HIT_HOLD;
+    if (y < HDR_TAP_H) {
+        if (x < MODE_X1 + 8) return HIT_MODE;
+        if (x >= SET_X0 - 4 && x < SET_X1 + 1) return HIT_SETUP;
+        if (x >= HOLD_X0 - 1) return HIT_HOLD;
         return HIT_NONE;
     }
     if (y < RO_Y) return HIT_PLOT;
@@ -109,6 +111,31 @@ Hit hit_test(const UiView &v, int x, int y) {
         if (x >= SCR_W - ARROW_W) return HIT_CH_NEXT;
     }
     return HIT_NONE;
+}
+
+/* Setup layout: title row, then MODE / CH / GAIN / SNR rows. */
+constexpr int SU_TITLE_H = 40, SU_ROW_Y = 44, SU_ROW_PITCH = 49, SU_ROW_H = 45;
+constexpr int SU_LABEL_W = 58, SU_COL0 = 62, SU_STEP_W = 64;
+constexpr int SU_CAL_X0 = 124, SU_CAL_X1 = 220, SU_DONE_X0 = 226;
+
+SetupHit setup_hit(int x, int y) {
+    if (y < SU_TITLE_H) {
+        if (x >= SU_DONE_X0) return SH_DONE;
+        if (x >= SU_CAL_X0 && x < SU_CAL_X1) return SH_CAL;
+        return SH_NONE;
+    }
+    int row = (y - SU_ROW_Y + 2) / SU_ROW_PITCH;
+    if (y < SU_ROW_Y - 2 || row > 3 || x < SU_COL0 - 2) return SH_NONE;
+    if (row == 0) {
+        int w = (SCR_W - SU_COL0) / 3;
+        int i = (x - SU_COL0) / w;
+        return i <= 0 ? SH_MODE_4 : i == 1 ? SH_MODE_3 : SH_MODE_1;
+    }
+    bool left = x < SU_COL0 + SU_STEP_W + 4, right = x >= SCR_W - SU_STEP_W - 4;
+    if (!left && !right) return SH_NONE;
+    if (row == 1) return left ? SH_CH_PREV : SH_CH_NEXT;
+    if (row == 2) return left ? SH_GAIN_DOWN : SH_GAIN_UP;
+    return left ? SH_SNR_DOWN : SH_SNR_UP;
 }
 
 /* --------------------------------------------------------------- sprites */
@@ -164,26 +191,26 @@ static void button(LGFX_Sprite &s, int x0, int x1, const char *text, bool on) {
 
 void Renderer::draw_header(const UiView &v) {
     LGFX_Sprite &s = hdr_;
+    char buf[48];
     s.fillScreen(C_BG);
     s.setFont(&fonts::Font2);
     button(s, 0, MODE_X1, mode_label(v.mode), true);
 
-    char buf[48];
     s.setFont(&fonts::Font0);
     s.setTextDatum(textdatum_t::middle_left);
     if (v.rx_errors) {
         snprintf(buf, sizeof(buf), "RX ERR %u", v.rx_errors);
         s.setTextColor(C_ERR);
     } else if (v.floor_db == v.floor_db) {
-        snprintf(buf, sizeof(buf), "%4.1fsw/s fl%.1fdB", v.sweeps_per_s, v.floor_db);
+        snprintf(buf, sizeof(buf), "%4.1f/s fl%.0f", v.sweeps_per_s, v.floor_db);
         s.setTextColor(C_AXIS);
     } else {
-        snprintf(buf, sizeof(buf), "waiting for RX");
+        snprintf(buf, sizeof(buf), "waiting");
         s.setTextColor(C_AXIS);
     }
-    s.drawString(buf, MODE_X1 + 6, HDR_H / 2);
+    s.drawString(buf, MODE_X1 + 4, HDR_H / 2);
 
-    /* battery, right-aligned before the gain button */
+    /* battery, right-aligned before SET */
     if (v.bat_mv != 0) {
         s.setTextDatum(textdatum_t::middle_right);
         if (v.bat_mv < FPV_BAT_ABSENT_MV) {
@@ -194,13 +221,11 @@ void Renderer::draw_header(const UiView &v) {
             bool low = FPV_BAT_CUTOFF_MV && v.bat_mv < FPV_BAT_CUTOFF_MV + 200;
             s.setTextColor(low ? C_DEV_BAD : C_TEXT);
         }
-        s.drawString(buf, GAIN_X0 - 4, HDR_H / 2);
+        s.drawString(buf, BAT_X1, HDR_H / 2);
     }
-
     s.setFont(&fonts::Font2);
-    if (v.gain < 0) snprintf(buf, sizeof(buf), "- AGC +");
-    else snprintf(buf, sizeof(buf), "- G%d +", v.gain);
-    button(s, GAIN_X0, GAIN_X1, buf, false);
+    button(s, SET_X0, SET_X1, "SET", false);
+    s.setFont(&fonts::Font2);
     button(s, HOLD_X0, SCR_W, "HOLD", v.hold_on);
     s.pushSprite(dst_, 0, HDR_Y);
 }
@@ -448,7 +473,7 @@ void Renderer::readout_single(const UiView &v, const UiChannel &c) {
     /* details */
     s.setFont(&fonts::Font0);
     s.setTextDatum(textdatum_t::top_left);
-    const int xd = x0 + 150;
+    const int xd = x1 - 88;
     s.setTextColor(live ? C_AXIS : C_DIM);
     if (c.m.peak_db == c.m.peak_db) snprintf(b, sizeof(b), "peak %6.1f dB", c.m.peak_db);
     else snprintf(b, sizeof(b), "peak     -- dB");
@@ -485,6 +510,79 @@ void Renderer::draw_readouts(const UiView &v) {
         for (int i = 0; i < v.nch; i++) readout_box(v, v.ch[i], i * w, i == v.nch - 1 ? SCR_W - i * w : w);
     }
     s.pushSprite(dst_, 0, RO_Y);
+}
+
+/* ------------------------------------------------------------------ setup */
+static uint16_t rgb(uint32_t c) { return lgfx::color565((c >> 16) & 255, (c >> 8) & 255, c & 255); }
+
+void Renderer::draw_setup(const SetupView &sv) {
+    lgfx::LovyanGFX &d = *dst_;
+    const uint16_t bg = rgb(UI_RGB[C_BG]), btn = rgb(UI_RGB[C_BTN]), on = rgb(UI_RGB[C_BTN_ON]);
+    const uint16_t text = rgb(UI_RGB[C_TEXT]), dim = rgb(UI_RGB[C_DIM]), axis = rgb(UI_RGB[C_AXIS]);
+    char b[32];
+    d.startWrite();
+    d.fillScreen(bg);
+
+    auto box = [&](int x0, int y0, int x1, int y1, const char *t, bool sel, const lgfx::IFont *f) {
+        d.fillRoundRect(x0, y0, x1 - x0, y1 - y0, 5, sel ? on : btn);
+        d.setFont(f);
+        d.setTextDatum(textdatum_t::middle_center);
+        d.setTextColor(sel ? bg : text);
+        d.drawString(t, (x0 + x1) / 2, (y0 + y1) / 2);
+    };
+    auto label = [&](int row, const char *t) {
+        d.setFont(&fonts::Font2);
+        d.setTextDatum(textdatum_t::middle_left);
+        d.setTextColor(axis);
+        d.drawString(t, 4, SU_ROW_Y + row * SU_ROW_PITCH + SU_ROW_H / 2);
+    };
+    auto stepper = [&](int row, const char *value, const char *unit, bool active) {
+        int y0 = SU_ROW_Y + row * SU_ROW_PITCH, y1 = y0 + SU_ROW_H;
+        box(SU_COL0, y0, SU_COL0 + SU_STEP_W, y1, "-", false, &fonts::Font4);
+        box(SCR_W - SU_STEP_W, y0, SCR_W - 1, y1, "+", false, &fonts::Font4);
+        int cx = (SU_COL0 + SU_STEP_W + SCR_W - SU_STEP_W) / 2;
+        d.setFont(&fonts::Font4);
+        d.setTextDatum(textdatum_t::middle_center);
+        d.setTextColor(active ? text : dim);
+        d.drawString(value, cx, (y0 + y1) / 2 - (unit ? 6 : 0));
+        if (unit) {
+            d.setFont(&fonts::Font0);
+            d.setTextColor(axis);
+            d.drawString(unit, cx, y1 - 6);
+        }
+    };
+
+    /* title row */
+    d.setFont(&fonts::Font4);
+    d.setTextDatum(textdatum_t::middle_left);
+    d.setTextColor(text);
+    d.drawString("SETUP", 6, SU_TITLE_H / 2);
+    box(SU_CAL_X0, 2, SU_CAL_X1, SU_TITLE_H - 2, "TOUCH CAL", false, &fonts::Font2);
+    box(SU_DONE_X0, 2, SCR_W - 1, SU_TITLE_H - 2, "DONE", true, &fonts::Font4);
+
+    /* MODE */
+    label(0, "MODE");
+    {
+        int y0 = SU_ROW_Y, y1 = y0 + SU_ROW_H, w = (SCR_W - SU_COL0) / 3;
+        static const Mode M[3] = {MODE_4CH, MODE_3CH, MODE_1CH};
+        for (int i = 0; i < 3; i++)
+            box(SU_COL0 + i * w + 1, y0, SU_COL0 + (i + 1) * w - 2, y1, mode_label(M[i]), sv.mode == M[i],
+                &fonts::Font4);
+    }
+    /* CH (1CH) */
+    label(1, "1CH");
+    snprintf(b, sizeof(b), "%s %d", sv.single_name, sv.single_mhz);
+    stepper(1, b, sv.mode == MODE_1CH ? nullptr : "1CH mode only", sv.mode == MODE_1CH);
+    /* GAIN */
+    label(2, "GAIN");
+    if (sv.gain < 0) snprintf(b, sizeof(b), "AGC");
+    else snprintf(b, sizeof(b), "%d", sv.gain);
+    stepper(2, b, "table idx, 55+ sat.", true);
+    /* SNR threshold */
+    label(3, "SNR");
+    snprintf(b, sizeof(b), "%d dB", sv.snr_db);
+    stepper(3, b, "peak above floor", true);
+    d.endWrite();
 }
 
 }  // namespace fpv
