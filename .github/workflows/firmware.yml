@@ -1,0 +1,105 @@
+name: Build firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  targets:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.catalog.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Test artifact export
+        run: python3 -m unittest discover -s tests
+      - id: catalog
+        run: echo "matrix=$(python3 tools/build_firmware.py --matrix)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Check out pinned ESP-IDF
+        uses: actions/checkout@v4
+        with:
+          repository: espressif/esp-idf
+          ref: ${{ matrix.idf_ref }}
+          path: .esp-idf
+          submodules: recursive
+      - name: Cache SDK tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.espressif
+          key: idf-${{ runner.os }}-${{ runner.arch }}-${{ matrix.idf_ref }}-${{ matrix.target }}
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git wget flex bison gperf cmake ninja-build ccache libffi-dev libssl-dev python3-venv libusb-1.0-0
+      - name: Install SDK tools
+        env:
+          IDF_TARGET_NAME: ${{ matrix.target }}
+        run: .esp-idf/install.sh "$IDF_TARGET_NAME"
+      - name: Build and export
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.id }}
+          FIRMWARE_VERSION: ${{ github.sha }}
+        run: |
+          source .esp-idf/export.sh
+          python tools/build_firmware.py --profile "$PROFILE" --version "$FIRMWARE_VERSION" --output artifacts
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.id }}
+          path: artifacts/${{ matrix.id }}/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.id }}
+          path: |
+            build-${{ matrix.id }}/log/
+            build-${{ matrix.id }}/sdkconfig
+          retention-days: 7
+
+  bundle:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-*
+          path: downloaded-firmware
+          merge-multiple: false
+      - name: Collect firmware and combined manifest
+        run: python3 tools/collect_firmware.py --input downloaded-firmware --output firmware --catalog firmware-targets.json
+      - name: Upload complete firmware set
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp-sdr-firmware
+          path: firmware/
+          if-no-files-found: error
+          retention-days: 90
