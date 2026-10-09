@@ -1,6 +1,7 @@
 #include "sdkconfig.h"
 #include "rx_recalibration.h"
 #include <stdint.h>
+#include <string.h>
 #include "soc/soc.h"
 
 /* These private ABIs and offsets belong to the PHY archives pinned in
@@ -39,10 +40,19 @@ void __wrap_phy_chip_set_chan_ana(unsigned mhz) {
 extern void phy_set_rx_gain_cal_dc(unsigned, unsigned, void *, void *);
 extern void phy_adc_rate_cal_rxdc(void);
 extern void phy_set_rx_gain_table(unsigned, unsigned);
+#if FPV_CALPROBE
+#include "esp_timer.h"
+int64_t fpv_cal_us[4];      /* CALPROBE: start, after chan_ana, after DC, after table */
+#define CAL_STAMP(i) (fpv_cal_us[i] = esp_timer_get_time())
+#else
+#define CAL_STAMP(i) ((void)0)
+#endif
 void rx_recalibrate_locked(unsigned mhz) {
+    CAL_STAMP(0);
     measurement_mhz = mhz;
     release_manual_gain();
     __real_phy_chip_set_chan_ana(mhz);
+    CAL_STAMP(1);
     unsigned band = phy_param[42];
     uint32_t *flags = (void *)(phy_param + 148);
     /* Retain the PHY's installed IQ coefficients. Loopback IQ calibration
@@ -57,9 +67,39 @@ void rx_recalibrate_locked(unsigned mhz) {
         phy_set_rx_gain_cal_dc(1, 1, phy_param + 348, phy_param + 904);
     }
     *flags |= 0x480u;
+    CAL_STAMP(2);
+    phy_set_rx_gain_table(mhz, 0);
+    CAL_STAMP(3);
+    measurement_mhz = 0;
+}
+#if FPV_LCD_MONITOR
+/* The phy_param bytes one DC measurement writes at a 5 GHz LO (found by
+ * diffing phy_param around rx_recalibrate_locked on the pinned PHY archive).
+ * Restoring them and rebuilding the gain table takes ~1 ms instead of the
+ * ~28 ms measurement. */
+static const struct { uint16_t at, n; } dc_regions[] = {
+    {288, 2}, {384, 256}, {714, 2}, {912, 64},
+};
+void rx_dc_snapshot(unsigned char *buf) {
+    for (unsigned i = 0; i < sizeof(dc_regions) / sizeof(dc_regions[0]); i++) {
+        memcpy(buf, phy_param + dc_regions[i].at, dc_regions[i].n);
+        buf += dc_regions[i].n;
+    }
+}
+void rx_dc_restore_locked(unsigned mhz, const unsigned char *buf) {
+    measurement_mhz = mhz;
+    release_manual_gain();
+    __real_phy_chip_set_chan_ana(mhz);
+    for (unsigned i = 0; i < sizeof(dc_regions) / sizeof(dc_regions[0]); i++) {
+        memcpy(phy_param + dc_regions[i].at, buf, dc_regions[i].n);
+        buf += dc_regions[i].n;
+    }
+    uint32_t *flags = (void *)(phy_param + 148);
+    *flags = (*flags & ~0x280u) | 0x480u;
     phy_set_rx_gain_table(mhz, 0);
     measurement_mhz = 0;
 }
+#endif
 #elif CONFIG_IDF_TARGET_ESP32C61 || CONFIG_IDF_TARGET_ESP32S31
 #include "esp_rom_sys.h"
 #include "rx_pll_cal.h"

@@ -91,6 +91,10 @@ if(fpv_lcd)
     elseif(NOT fpv_panel STREQUAL "ILI9341")
         message(FATAL_ERROR "FPV_PANEL must be ILI9341 or RESTOUCH35 (got '${fpv_panel}')")
     endif()
+    idf_build_get_property(fpv_calprobe FPV_CALPROBE)
+    if(fpv_calprobe)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE FPV_CALPROBE=1)
+    endif()
 endif()
 
 # Regenerate at build time (not only CMake configure time). The embedded record

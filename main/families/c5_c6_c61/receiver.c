@@ -89,7 +89,13 @@ static void prepare_rx(void) {
     }
 #endif
     if (calibrated_mhz != frequency_mhz || rx_recalibration_stale()) {
+#if FPV_LCD_MONITOR && CONFIG_IDF_TARGET_ESP32C5
+        /* The monitor sweeps the same few LOs over and over: reuse each
+         * LO's DC measurement until the PHY recalibrates (~1 ms, not ~28). */
+        rx_recalibrate_cached(frequency_mhz);
+#else
         rx_recalibrate(frequency_mhz);
+#endif
         calibrated_mhz = frequency_mhz;
     }
 #if CONFIG_IDF_TARGET_ESP32C5
@@ -383,6 +389,35 @@ static void handle_command(char *line) {
             probe_source=n;probe_clock=rate;probe_capture=true;capture(16380,0,20);probe_capture=false;
         }
         else if(sscanf(line,"ADCCLOCK %u %c",&n,&extra)==1 && (n<2 || n==4)) {probe_adc=n;reply("OK\n");}
+#endif
+#if FPV_CALPROBE
+        else if(sscanf(line,"CALPROBE %u %c",&n,&extra)==1 && frequency_valid(n)) {
+            /* Time one retune and list the phy_param bytes it changed. */
+            extern unsigned char phy_param[];
+            extern int64_t fpv_cal_us[4];
+            static unsigned char before[1080];
+            memcpy(before,phy_param,sizeof(before));
+            memset(fpv_cal_us,0,sizeof(int64_t)*4);
+            int64_t t0=esp_timer_get_time();
+            frequency_mhz=n;rx_ready=false;prepare_rx();
+            int64_t t1=esp_timer_get_time();
+            char h[600];
+            int k=snprintf(h,sizeof(h),"CALPROBE %u total=%lld chan=%lld dc=%lld table=%lld diff=",n,
+                (long long)(t1-t0),(long long)(fpv_cal_us[1]-fpv_cal_us[0]),
+                (long long)(fpv_cal_us[2]-fpv_cal_us[1]),(long long)(fpv_cal_us[3]-fpv_cal_us[2]));
+            for(unsigned i=0;i<sizeof(before) && k<(int)sizeof(h)-24;) {
+                if(before[i]==phy_param[i]){i++;continue;}
+                unsigned j=i;
+                while(j<sizeof(before) && (before[j]!=phy_param[j] || (j+1<sizeof(before) && before[j+1]!=phy_param[j+1])))j++;
+                k+=snprintf(h+k,sizeof(h)-k,"%u-%u,",i,j-1);
+                i=j;
+            }
+            snprintf(h+k,sizeof(h)-k,"\n");
+            reply(h);
+        }
+        else if(sscanf(line,"CALCACHE %u %c",&n,&extra)==1 && n<=1) {
+            rx_dc_cache_enabled=n!=0;reply("OK\n");
+        }
 #endif
         else if(!strcmp(line,"CAPS")) {
 #if FPV_LCD_MONITOR

@@ -49,10 +49,22 @@ bool rx_recalibration_stale(void) {
 #endif
 }
 
+#if FPV_LCD_MONITOR && CONFIG_IDF_TARGET_ESP32C5
+/* DC measurements we made ourselves; dc_generation minus these counts only
+ * the PHY's own (background) recalibrations, which invalidate the cache. */
+static unsigned own_generations;
+#endif
+
 void rx_recalibrate(unsigned mhz) {
     _lock_t lock = phy_get_lock();
     _lock_acquire(&lock);
+#if FPV_LCD_MONITOR && CONFIG_IDF_TARGET_ESP32C5
+    unsigned g0 = atomic_load(&dc_generation);
     rx_recalibrate_locked(mhz);
+    own_generations += atomic_load(&dc_generation) - g0;
+#else
+    rx_recalibrate_locked(mhz);
+#endif
 #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S2
     memcpy(calibrated_rxbb_dc, phy_rxbb_dc, RXBB_DC_BYTES);
     memcpy(calibrated_rxrf_dc, phy_rxrf_dc, RXRF_DC_BYTES);
@@ -64,6 +76,61 @@ void rx_recalibrate(unsigned mhz) {
     calibrated = true;
     _lock_release(&lock);
 }
+
+#if FPV_LCD_MONITOR && CONFIG_IDF_TARGET_ESP32C5
+#include <stdlib.h>
+#include "esp_timer.h"
+/* One entry per LO of a sweep (at most 9 for 175 MHz, plus 1CH spans). */
+#define RX_DC_CACHE_N 12
+#define RX_DC_CACHE_MAX_AGE_US 30000000LL
+typedef struct {
+    unsigned mhz, foreign;
+    int64_t t_us;
+    unsigned char dc[RX_DC_SNAPSHOT_BYTES];
+} rx_dc_entry_t;
+static rx_dc_entry_t *dc_cache;          /* heap: .bss has no room for 4 KB */
+bool rx_dc_cache_enabled = true;
+
+bool rx_recalibrate_cached(unsigned mhz) {
+    if (!rx_dc_cache_enabled) { rx_recalibrate(mhz); return false; }
+    if (!dc_cache) {
+        dc_cache = calloc(RX_DC_CACHE_N, sizeof(rx_dc_entry_t));
+        if (!dc_cache) { rx_recalibrate(mhz); return false; }
+    }
+    int64_t now = esp_timer_get_time();
+    /* One lock for lookup, measurement and snapshot: the PHY's tracker must
+     * not replace the tables between our measurement and its copy. */
+    _lock_t lock = phy_get_lock();
+    _lock_acquire(&lock);
+    unsigned foreign = atomic_load(&dc_generation) - own_generations;
+    rx_dc_entry_t *slot = &dc_cache[0];
+    bool hit = false;
+    for (unsigned i = 0; i < RX_DC_CACHE_N; i++) {
+        rx_dc_entry_t *e = &dc_cache[i];
+        if (e->mhz == mhz) {
+            slot = e;
+            hit = e->foreign == foreign && now - e->t_us < RX_DC_CACHE_MAX_AGE_US;
+            break;
+        }
+        if (e->t_us < slot->t_us) slot = e;   /* else replace the oldest */
+    }
+    if (hit) {
+        rx_dc_restore_locked(mhz, slot->dc);
+    } else {
+        unsigned g0 = atomic_load(&dc_generation);
+        rx_recalibrate_locked(mhz);
+        own_generations += atomic_load(&dc_generation) - g0;
+        slot->mhz = mhz;
+        slot->foreign = atomic_load(&dc_generation) - own_generations;
+        slot->t_us = now;
+        rx_dc_snapshot(slot->dc);
+    }
+    calibrated_generation = atomic_load(&dc_generation);
+    calibrated = true;
+    _lock_release(&lock);
+    return hit;
+}
+#endif
 
 /* Private, word-sized calling conventions from the pinned PHY archives.
  * Forward every register/stack argument unchanged. Wrapping the measurement
