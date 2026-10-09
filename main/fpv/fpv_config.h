@@ -8,12 +8,12 @@
  *   D/C                    D1     0
  *   RESET                  D4     23
  *   T_CS                   D5     24
- *   LED                    3V3
- *   VCC                    5V     (J1 open)  or 3V3 with J1 closed
+ *   LED                    D6     11    (backlight, switched off at shutdown)
+ *   VCC                    3V3    (J1 closed; the 5V pin is dead on battery)
  *   T_IRQ                  -      (not used, the touch is polled)
  *
- * D2/D3 (GPIO25/7) are strapping pins and D6/D7 (GPIO11/12) belong to the
- * ESP-SDR UART bridge, so none of them is used. */
+ * D2/D3 (GPIO25/7) are strapping pins and stay unused. D6/D7 (GPIO11/12) are
+ * the ESP-SDR UART bridge in the stock firmware, which this build disables. */
 #pragma once
 
 #define FPV_PIN_SCLK 8
@@ -23,6 +23,19 @@
 #define FPV_PIN_LCD_DC 0
 #define FPV_PIN_LCD_RST 23
 #define FPV_PIN_TOUCH_CS 24
+#define FPV_PIN_BACKLIGHT 11         /* -1 if LED is tied to 3V3 */
+#define FPV_BACKLIGHT_ON 1           /* level that lights it */
+
+/* Battery (XIAO ESP32-C5 on-board divider). */
+#define FPV_PIN_BAT_ADC 6
+#define FPV_PIN_BAT_EN 26
+#define FPV_BAT_CUTOFF_MV 3300       /* shut down below this, under load; 0 = never */
+#define FPV_BAT_LOW_READS 3          /* consecutive low readings before shutting down */
+#define FPV_BAT_CHECK_MS 2000
+#define FPV_BAT_BOOT_MV 3400         /* power-on / reset needs at least this */
+#define FPV_BAT_RESUME_MV 3700       /* after a low-battery shutdown: wait until charged to this */
+#define FPV_BAT_WAKE_S 60            /* while shut down, check the battery this often */
+#define FPV_BAT_ABSENT_MV 1000       /* below: no battery, running from USB */
 
 #define FPV_LCD_SPI_HZ 40000000
 #define FPV_TOUCH_SPI_HZ 1000000

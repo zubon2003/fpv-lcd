@@ -74,8 +74,8 @@ if(fpv_lcd)
     # The monitor never runs the USB SPEC protocol; dropping its 26 KB of
     # static buffers keeps .bss below the modem's capture bank.
     list(REMOVE_ITEM sources "common/spectrum.c")
-    list(APPEND sources "fpv/channels.c" "fpv/dsp.c" "fpv/analysis.c" "fpv/ui.cpp" "fpv/monitor.cpp")
-    list(APPEND dependencies LovyanGFX nvs_flash esp_driver_spi)
+    list(APPEND sources "fpv/channels.c" "fpv/dsp.c" "fpv/analysis.c" "fpv/ui.cpp" "fpv/monitor.cpp" "fpv/battery.c")
+    list(APPEND dependencies LovyanGFX nvs_flash esp_driver_spi esp_adc)
     list(APPEND fpv_includes "." "fpv")
 endif()
 

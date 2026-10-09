@@ -286,6 +286,9 @@ bool sdr_hw_capture(unsigned n, const uint32_t **iq) {
 
 void app_main(void) {
 
+#if FPV_LCD_MONITOR
+    fpv_monitor_early();
+#endif
     esp_log_level_set("*",ESP_LOG_NONE);
     esp_err_t e=nvs_flash_init();
     if(e==ESP_ERR_NVS_NO_FREE_PAGES||e==ESP_ERR_NVS_NEW_VERSION_FOUND) {

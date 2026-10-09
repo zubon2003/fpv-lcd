@@ -46,6 +46,7 @@ struct UiView {
     float sweeps_per_s = 0;
     int gain = 40;               /* -1 = AGC */
     unsigned rx_errors = 0;
+    int bat_mv = 0;                /* 0 unknown, < FPV_BAT_ABSENT_MV: USB */
     const char *message = nullptr;  /* overlay text, e.g. "clear" */
 };
 

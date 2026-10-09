@@ -86,6 +86,7 @@ int main(int argc, char **argv) {
     v.have_data = true;
     v.sweeps_per_s = v.mode == MODE_1CH ? 14.2f : v.mode == MODE_3CH ? 6.1f : 4.6f;
     v.gain = 40;
+    v.bat_mv = v.mode == MODE_1CH ? 3410 : 3920;   /* 1ch preview shows the low colour */
 
     LGFX_Sprite screen;
     screen.setColorDepth(16);

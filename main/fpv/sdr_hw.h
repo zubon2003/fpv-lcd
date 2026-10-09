@@ -18,6 +18,8 @@ int sdr_hw_gain_max(void);
  * pointer stays valid until the next capture. */
 bool sdr_hw_capture(unsigned n, const uint32_t **iq);
 
+/* First thing in app_main: deep-sleeps instead of starting on a flat battery. */
+void fpv_monitor_early(void);
 /* Entry point of the monitor; called from app_main, never returns. */
 void fpv_monitor_main(void);
 

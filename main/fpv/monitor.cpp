@@ -20,9 +20,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
+#include "esp_attr.h"
+#include "esp_sleep.h"
 #include "nvs.h"
 
 #include "analysis.h"
+#include "battery.h"
 #include "channels.h"
 #include "dsp.h"
 #include "fpv_config.h"
@@ -190,6 +194,57 @@ static float *s_shared;                     /* receiver -> UI */
 static uint32_t s_shared_seq, s_shared_gen;
 static int64_t s_shared_t_us;
 static unsigned s_rx_errors;
+static volatile int s_bat_mv;               /* latest battery reading */
+static volatile bool s_shutdown;            /* receiver -> UI: battery low */
+
+/* ---------------------------------------------------------------- power */
+/* Set while sleeping because of a low battery: the next timer wake then
+ * waits for FPV_BAT_RESUME_MV (charged) instead of FPV_BAT_BOOT_MV. */
+static RTC_DATA_ATTR bool s_low_sleep;
+
+static const gpio_num_t HELD_PINS[] = {
+    (gpio_num_t)FPV_PIN_LCD_CS, (gpio_num_t)FPV_PIN_TOUCH_CS, (gpio_num_t)FPV_PIN_LCD_RST,
+#if FPV_PIN_BACKLIGHT >= 0
+    (gpio_num_t)FPV_PIN_BACKLIGHT,
+#endif
+};
+
+static void backlight(bool on) {
+#if FPV_PIN_BACKLIGHT >= 0
+    gpio_hold_dis((gpio_num_t)FPV_PIN_BACKLIGHT);
+    gpio_config_t io = {};
+    io.pin_bit_mask = 1ULL << FPV_PIN_BACKLIGHT;
+    io.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&io);
+    gpio_set_level((gpio_num_t)FPV_PIN_BACKLIGHT, on ? FPV_BACKLIGHT_ON : !FPV_BACKLIGHT_ON);
+#else
+    (void)on;
+#endif
+}
+
+/* Deep sleep until the next battery check. The LCD must already be asleep;
+ * the backlight and both SPI chip selects are held off while sleeping. */
+[[noreturn]] static void power_off() {
+    backlight(false);
+    /* chip selects and the LCD reset high, so nothing wakes or resets the
+     * panels while the pins would otherwise float */
+    gpio_config_t io = {};
+    io.pin_bit_mask = (1ULL << FPV_PIN_LCD_CS) | (1ULL << FPV_PIN_TOUCH_CS) | (1ULL << FPV_PIN_LCD_RST);
+    io.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&io);
+    gpio_set_level((gpio_num_t)FPV_PIN_LCD_CS, 1);
+    gpio_set_level((gpio_num_t)FPV_PIN_TOUCH_CS, 1);
+    gpio_set_level((gpio_num_t)FPV_PIN_LCD_RST, 1);
+    for (gpio_num_t p : HELD_PINS) gpio_hold_en(p);
+    bat_park();
+    s_low_sleep = true;
+    esp_sleep_enable_timer_wakeup((uint64_t)FPV_BAT_WAKE_S * 1000000ULL);
+    esp_deep_sleep_start();
+}
+
+static bool battery_low(int mv, int limit) {
+    return FPV_BAT_CUTOFF_MV > 0 && mv >= FPV_BAT_ABSENT_MV && mv < limit;
+}
 
 static float *s_work;
 static float *s_psd;
@@ -209,6 +264,21 @@ static void receiver_loop() {
             gain = want_gain;
             int gmax = sdr_hw_gain_max();
             sdr_hw_gain(gain < 0 ? -1 : (gain > gmax && gmax > 0 ? gmax : gain));
+        }
+
+        /* battery, between sweeps (the ADC never runs during a capture) */
+        static int64_t t_bat;
+        static int low_reads;
+        int64_t now = esp_timer_get_time();
+        if (now - t_bat >= (int64_t)FPV_BAT_CHECK_MS * 1000) {
+            t_bat = now;
+            int mv = bat_read_mv();
+            s_bat_mv = mv;
+            low_reads = battery_low(mv, FPV_BAT_CUTOFF_MV) ? low_reads + 1 : 0;
+            if (low_reads >= FPV_BAT_LOW_READS) {
+                s_shutdown = true;                   /* the UI powers off */
+                for (;;) vTaskDelay(portMAX_DELAY);
+            }
         }
 
         sweep_clear(s_work, plan.nbins);
@@ -431,6 +501,7 @@ static void measure_and_level() {
     }
     s_view.sweeps_per_s = s_st.period_s > 0 ? 1.0f / s_st.period_s : 0.0f;
     s_view.rx_errors = s_rx_errors;
+    s_view.bat_mv = s_bat_mv;
     s_view.have_data = true;
 }
 
@@ -448,6 +519,7 @@ static void calibrate_touch() {
 
 static void ui_task(void *) {
     s_lcd.init();
+    backlight(true);
     s_lcd.setRotation(FPV_LCD_ROTATION);
     s_lcd.fillScreen(TFT_BLACK);
 
@@ -519,6 +591,22 @@ static void ui_task(void *) {
     };
     for (;;) {
         bool fresh = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(15)) > 0;
+        if (s_shutdown) {
+            char b[48];
+            int mv = s_bat_mv;
+            s_lcd.fillScreen(TFT_BLACK);
+            s_lcd.setFont(&fonts::Font4);
+            s_lcd.setTextDatum(textdatum_t::middle_center);
+            s_lcd.setTextColor(TFT_RED, TFT_BLACK);
+            snprintf(b, sizeof(b), "Battery low  %d.%02d V", mv / 1000, (mv % 1000) / 10);
+            s_lcd.drawString(b, SCR_W / 2, SCR_H / 2 - 16);
+            s_lcd.setFont(&fonts::Font2);
+            s_lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+            s_lcd.drawString("shutting down - charge to restart", SCR_W / 2, SCR_H / 2 + 16);
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            s_lcd.sleep();
+            power_off();
+        }
 
         int32_t tx, ty;
         bool t = s_lcd.getTouch(&tx, &ty);
@@ -604,6 +692,39 @@ static void alloc_buffers() {
     s_viewp = new (v) UiView();
 }
 }  // namespace fpv
+
+/* Before the radio starts: refuse to run on a flat battery. After a
+ * low-battery shutdown the timer wakes us every FPV_BAT_WAKE_S; we go back to
+ * sleep without touching the LCD until the battery has been charged. */
+extern "C" void fpv_monitor_early(void) {
+    using namespace fpv;
+    for (gpio_num_t p : HELD_PINS) gpio_hold_dis(p);
+    bool timer_wake = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
+    int need = (timer_wake && s_low_sleep) ? FPV_BAT_RESUME_MV : FPV_BAT_BOOT_MV;
+    if (!bat_init()) { s_low_sleep = false; return; }
+    int mv = bat_read_mv();
+    s_bat_mv = mv;
+    if (!battery_low(mv, need)) { s_low_sleep = false; return; }
+    if (!timer_wake) {
+        /* power-on or reset: say why, then sleep */
+        char b[48];
+        s_lcd.init();
+        s_lcd.setRotation(FPV_LCD_ROTATION);
+        backlight(true);
+        s_lcd.fillScreen(TFT_BLACK);
+        s_lcd.setFont(&fonts::Font4);
+        s_lcd.setTextDatum(textdatum_t::middle_center);
+        s_lcd.setTextColor(TFT_RED, TFT_BLACK);
+        snprintf(b, sizeof(b), "Battery low  %d.%02d V", mv / 1000, (mv % 1000) / 10);
+        s_lcd.drawString(b, SCR_W / 2, SCR_H / 2 - 16);
+        s_lcd.setFont(&fonts::Font2);
+        s_lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+        s_lcd.drawString("charge the battery", SCR_W / 2, SCR_H / 2 + 16);
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        s_lcd.sleep();
+    }
+    power_off();
+}
 
 extern "C" void fpv_monitor_main(void) {
     using namespace fpv;

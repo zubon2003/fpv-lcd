@@ -175,13 +175,27 @@ void Renderer::draw_header(const UiView &v) {
         snprintf(buf, sizeof(buf), "RX ERR %u", v.rx_errors);
         s.setTextColor(C_ERR);
     } else if (v.floor_db == v.floor_db) {
-        snprintf(buf, sizeof(buf), "%4.1f sw/s  floor %.1f dB", v.sweeps_per_s, v.floor_db);
+        snprintf(buf, sizeof(buf), "%4.1fsw/s fl%.1fdB", v.sweeps_per_s, v.floor_db);
         s.setTextColor(C_AXIS);
     } else {
-        snprintf(buf, sizeof(buf), "waiting for the receiver");
+        snprintf(buf, sizeof(buf), "waiting for RX");
         s.setTextColor(C_AXIS);
     }
     s.drawString(buf, MODE_X1 + 6, HDR_H / 2);
+
+    /* battery, right-aligned before the gain button */
+    if (v.bat_mv != 0) {
+        s.setTextDatum(textdatum_t::middle_right);
+        if (v.bat_mv < FPV_BAT_ABSENT_MV) {
+            snprintf(buf, sizeof(buf), "USB");
+            s.setTextColor(C_AXIS);
+        } else {
+            snprintf(buf, sizeof(buf), "%d.%02dV", v.bat_mv / 1000, (v.bat_mv % 1000) / 10);
+            bool low = FPV_BAT_CUTOFF_MV && v.bat_mv < FPV_BAT_CUTOFF_MV + 200;
+            s.setTextColor(low ? C_DEV_BAD : C_TEXT);
+        }
+        s.drawString(buf, GAIN_X0 - 4, HDR_H / 2);
+    }
 
     s.setFont(&fonts::Font2);
     if (v.gain < 0) snprintf(buf, sizeof(buf), "- AGC +");
