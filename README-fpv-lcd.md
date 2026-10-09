@@ -1,8 +1,9 @@
-# FPV バンドモニタ 液晶版（XIAO ESP32-C5 + ILI9341）
+# FPV バンドモニタ 液晶版（XIAO ESP32-C5 + ILI9341 / Waveshare 3.5"）
 
 [fpv-band-monitor-c5](https://github.com/zubon2003/fpv-band-monitor-c5)（PC 版）の解析と画面を、
 ESP32-C5 単体で動くように [ESP-SDR](https://github.com/ESPARGOS/esp-sdr) ファームに組み込んだもの。
 PC は不要で、2.8" ILI9341 + XPT2046 タッチ液晶にスペクトラム・ウォーターフォール・実測中心周波数を表示する。
+Waveshare Pico-ResTouch-LCD-3.5（3.5" 480×320、ILI9488 + XPT2046）用のビルドもある（同じ画面を 1.5 倍で表示）。
 **アナログ FPV の映像電波（FM-ATV）専用**。
 
 追加したコードは `main/fpv/` にまとまっている。ESP-SDR 側の変更は
@@ -81,6 +82,37 @@ D2/D3（GPIO25/7）はストラップピンなので使っていない。D6（GP
 電池で動かすときは XIAO の 5V ピンに電圧が出ないので、液晶の VCC は必ず 3V3 から取り、液晶基板の J1 を短絡する。
 ピンや画面の向きは `main/fpv/fpv_config.h` で変えられる（`FPV_LCD_ROTATION` 1 か 3）。
 
+## Waveshare Pico-ResTouch-LCD-3.5 を使う場合
+
+専用のファーム `firmware/fpv-lcd-xiao-c5-restouch35-merged.bin` を書く（2.8" 用とは別。ビルドは `-D FPV_PANEL=RESTOUCH35`）。
+画面の配置・操作は 2.8" 版と同じで、480×320 に合わせて拡大し、文字は DejaVu フォントになる。
+
+配線は 2.8" 版と**同じ XIAO のピン**。基板の Pico 用ソケット（ピン番号は Pico の物理番号）に、ジャンパ線でつなぐ。
+
+| 基板の信号（Pico GPIO／ピン番号） | XIAO | GPIO |
+|---|---|---|
+| LCD_CLK（GP10／14） | D8 | 8 |
+| MOSI（GP11／15） | D10 | 10 |
+| MISO（GP12／16）タッチのデータ | D9 | 9 |
+| LCD_CS（GP9／12） | D0 | 1 |
+| LCD_DC（GP8／11） | D1 | 0 |
+| LCD_RST（GP15／20） | D4 | 23 |
+| TP_CS（GP16／21） | D5 | 24 |
+| LCD_BL（GP13／17） | D6 | 11 |
+| VSYS（39） | 下記 | – |
+| GND（38 など） | GND | – |
+| TP_IRQ（GP17）、SD_CS（GP22） | 未接続 | – |
+
+- **電源**：この基板は VSYS（5 V、最大 180 mA）から自前で 3.3 V を作る。USB 給電だけなら XIAO の **5V** ピンから。
+  電池で動かすときは XIAO の 5V ピンに電圧が出ないので、VSYS を XIAO 裏の **BAT+** につなぐ（Pico の VSYS も電池をつなぐ前提の端子）。
+  ただし電池電圧（3.3〜4.2 V）でこの基板の 3.3 V がどこまで保てるかは未確認。電池が減るとバックライトが暗くなる程度で済むはずだが、
+  表示が乱れるなら電源を見直す。
+- **SD カード**は入れない（SD_CS を使っていないので、カードが MISO を乱すおそれがある）。
+- この基板の液晶は 16 bit パラレルを SPI からシフトレジスタで動かす方式なので、読み出しはできず、1 回の送信は必ず 16 bit 単位
+  （LovyanGFX の `dlen_16bit`、色は RGB565）。SPI は 20 MHz（`FPV_LCD_SPI_HZ`）。ESP32 で 20 MHz を超えると乱れたという報告がある。
+- タッチの校正値は 2.8" 版と別に保存する。初回起動時に校正画面が出る。
+- **実機では未確認**。色が反転していたら `FPV_LCD_INVERT` を false に、表示が乱れるなら `FPV_LCD_SPI_HZ` を 10 MHz に下げる。
+
 ## PC との接続（USB）
 
 PC 版（fpv-band-monitor-c5）は 2 つの受信方式でこのファームにつながる。画面上部の **Rx: auto / iq / fft** ボタン
@@ -145,7 +177,8 @@ USB をつないで充電すると電圧が上がるので、次の確認（最�
 
 ## 書き込み
 
-ビルド済みの `firmware/fpv-lcd-xiao-c5-merged.bin` を **オフセット 0x0** に書く（8 MB フラッシュ用）。
+ビルド済みの `firmware/fpv-lcd-xiao-c5-merged.bin`（2.8" ILI9341 用）または
+`firmware/fpv-lcd-xiao-c5-restouch35-merged.bin`（3.5" Pico-ResTouch-LCD-3.5 用）を **オフセット 0x0** に書く（8 MB フラッシュ用）。
 
 ```
 python -m esptool --chip esp32c5 write-flash 0x0 firmware/fpv-lcd-xiao-c5-merged.bin
@@ -166,6 +199,8 @@ idf.py -B build-fpv -D FPV_LCD_MONITOR=ON -D SDKCONFIG=build-fpv/sdkconfig \
   set-target esp32c5 build
 idf.py -B build-fpv -p PORT flash
 ```
+
+3.5" 版は別のビルドフォルダで `-D FPV_PANEL=RESTOUCH35` を足す（例 `idf.py -B build-fpv35 -D FPV_LCD_MONITOR=ON -D FPV_PANEL=RESTOUCH35 -D SDKCONFIG=build-fpv35/sdkconfig ...`）。
 
 `-D FPV_LCD_MONITOR=ON` を付けなければ、従来どおりの ESP-SDR（USB で PC 版やブラウザ版を使う）になる。
 

@@ -1,5 +1,7 @@
-/* Screen layout and drawing (320 x 240 landscape). Depends only on
- * LovyanGFX sprites, so the same code renders on the PC for previews. */
+/* Screen layout and drawing: 320 x 240 landscape (2.8" ILI9341), or 480 x 320
+ * with FPV_PANEL_RESTOUCH35 (Waveshare Pico-ResTouch-LCD-3.5, ILI9488): the
+ * same layout, scaled. Depends only on LovyanGFX sprites, so the same code
+ * renders on the PC for previews. */
 #pragma once
 #include <stdint.h>
 #include "analysis.h"
@@ -10,12 +12,19 @@
 
 namespace fpv {
 
+#if FPV_PANEL_RESTOUCH35
+constexpr int SCR_W = 480, SCR_H = 320;
+constexpr int HDR_H = 22, SPEC_H = 140, AXIS_H = 14, WF_H = 64, RO_H = 80;
+#else
 constexpr int SCR_W = 320, SCR_H = 240;
-constexpr int HDR_Y = 0, HDR_H = 16;
-constexpr int SPEC_Y = 16, SPEC_H = 104;
-constexpr int AXIS_Y = 120, AXIS_H = 10;
-constexpr int WF_Y = 130, WF_H = 48;
-constexpr int RO_Y = 178, RO_H = 62;
+constexpr int HDR_H = 16, SPEC_H = 104, AXIS_H = 10, WF_H = 48, RO_H = 62;
+#endif
+constexpr int HDR_Y = 0;
+constexpr int SPEC_Y = HDR_Y + HDR_H;
+constexpr int AXIS_Y = SPEC_Y + SPEC_H;
+constexpr int WF_Y = AXIS_Y + AXIS_H;
+constexpr int RO_Y = WF_Y + WF_H;
+static_assert(RO_Y + RO_H == SCR_H, "layout must fill the screen");
 constexpr int COLS = SCR_W;
 constexpr int MAX_CH = 4;
 

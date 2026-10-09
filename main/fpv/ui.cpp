@@ -6,6 +6,23 @@
 
 namespace fpv {
 
+/* Scale of the 320 x 240 layout: SX horizontal, SY vertical; fonts by role. */
+#if FPV_PANEL_RESTOUCH35
+static constexpr int SX(int v) { return v * 3 / 2; }
+static constexpr int SY(int v) { return v * 4 / 3; }
+#define F_S (&fonts::DejaVu12)
+#define F_M (&fonts::DejaVu18)
+#define F_L (&fonts::DejaVu24)
+#define F_XL (&fonts::DejaVu40)
+#else
+static constexpr int SX(int v) { return v; }
+static constexpr int SY(int v) { return v; }
+#define F_S (&fonts::Font0)
+#define F_M (&fonts::Font2)
+#define F_L (&fonts::Font4)
+#define F_XL (&fonts::Font4)
+#endif
+
 /* ---------------------------------------------------------------- colours */
 /* UI palette (spectrum, header, axis, readouts): index -> RGB. */
 enum : uint8_t {
@@ -93,16 +110,17 @@ static uint8_t dev_colour(float off) {
 }
 
 /* -------------------------------------------------------------- hit test */
-/* Header: [MODE 0..63] status battery [SET 196..255] [HOLD 258..319]. Taps
- * reach 24 px below it (about 7 mm in all) so a fingertip can hit them. */
-constexpr int MODE_X1 = 64, BAT_X1 = 192, SET_X0 = 196, SET_X1 = 256, HOLD_X0 = 258;
-constexpr int HDR_TAP_H = HDR_H + 24;
-constexpr int ARROW_W = 44;   /* 1ch readout: < and > buttons (8 mm) */
+/* Header: [MODE 0..63] status battery [SET 196..255] [HOLD 258..319] (on the
+ * 320 px screen). Taps reach 24 px below it (about 7 mm in all) so a
+ * fingertip can hit them. */
+constexpr int MODE_X1 = SX(64), BAT_X1 = SX(192), SET_X0 = SX(196), SET_X1 = SX(256), HOLD_X0 = SX(258);
+constexpr int HDR_TAP_H = HDR_H + SY(24);
+constexpr int ARROW_W = SX(44);   /* 1ch readout: < and > buttons (8 mm) */
 
 Hit hit_test(const UiView &v, int x, int y) {
     if (y < HDR_TAP_H) {
-        if (x < MODE_X1 + 8) return HIT_MODE;
-        if (x >= SET_X0 - 4 && x < SET_X1 + 1) return HIT_SETUP;
+        if (x < MODE_X1 + SX(8)) return HIT_MODE;
+        if (x >= SET_X0 - SX(4) && x < SET_X1 + 1) return HIT_SETUP;
         if (x >= HOLD_X0 - 1) return HIT_HOLD;
         return HIT_NONE;
     }
@@ -115,9 +133,9 @@ Hit hit_test(const UiView &v, int x, int y) {
 }
 
 /* Setup layout: title row, then MODE / CH / GAIN / SNR rows. */
-constexpr int SU_TITLE_H = 40, SU_ROW_Y = 44, SU_ROW_PITCH = 49, SU_ROW_H = 45;
-constexpr int SU_LABEL_W = 58, SU_COL0 = 62, SU_STEP_W = 64;
-constexpr int SU_CAL_X0 = 124, SU_CAL_X1 = 220, SU_DONE_X0 = 226;
+constexpr int SU_TITLE_H = SY(40), SU_ROW_Y = SY(44), SU_ROW_PITCH = SY(49), SU_ROW_H = SY(45);
+constexpr int SU_COL0 = SX(62), SU_STEP_W = SX(64);
+constexpr int SU_CAL_X0 = SX(124), SU_CAL_X1 = SX(220), SU_DONE_X0 = SX(226);
 
 SetupHit setup_hit(int x, int y) {
     if (y < SU_TITLE_H) {
@@ -132,7 +150,7 @@ SetupHit setup_hit(int x, int y) {
         int i = (x - SU_COL0) / w;
         return i <= 0 ? SH_MODE_4 : i == 1 ? SH_MODE_3 : SH_MODE_1;
     }
-    bool left = x < SU_COL0 + SU_STEP_W + 4, right = x >= SCR_W - SU_STEP_W - 4;
+    bool left = x < SU_COL0 + SU_STEP_W + SX(4), right = x >= SCR_W - SU_STEP_W - SX(4);
     if (!left && !right) return SH_NONE;
     if (row == 1) return left ? SH_CH_PREV : SH_CH_NEXT;
     if (row == 2) return left ? SH_GAIN_DOWN : SH_GAIN_UP;
@@ -184,7 +202,7 @@ void Renderer::draw_frame(const UiView &v) {
 
 /* ---------------------------------------------------------------- header */
 static void button(LGFX_Sprite &s, int x0, int x1, const char *text, bool on) {
-    s.fillRoundRect(x0, 1, x1 - x0, HDR_H - 2, 3, on ? C_BTN_ON : C_BTN);
+    s.fillRoundRect(x0, 1, x1 - x0, HDR_H - 2, SY(3), on ? C_BTN_ON : C_BTN);
     s.setTextColor(on ? C_BG : C_TEXT);
     s.setTextDatum(textdatum_t::middle_center);
     s.drawString(text, (x0 + x1) / 2, HDR_H / 2);
@@ -194,10 +212,10 @@ void Renderer::draw_header(const UiView &v) {
     LGFX_Sprite &s = hdr_;
     char buf[48];
     s.fillScreen(C_BG);
-    s.setFont(&fonts::Font2);
+    s.setFont(F_M);
     button(s, 0, MODE_X1, mode_label(v.mode), true);
 
-    s.setFont(&fonts::Font0);
+    s.setFont(F_S);
     s.setTextDatum(textdatum_t::middle_left);
     if (v.rx_errors) {
         snprintf(buf, sizeof(buf), "RX ERR %u", v.rx_errors);
@@ -209,7 +227,7 @@ void Renderer::draw_header(const UiView &v) {
         snprintf(buf, sizeof(buf), "waiting");
         s.setTextColor(C_AXIS);
     }
-    s.drawString(buf, MODE_X1 + 4, HDR_H / 2);
+    s.drawString(buf, MODE_X1 + SX(4), HDR_H / 2);
 
     /* battery, right-aligned before SET */
     if (v.bat_mv != 0) {
@@ -224,9 +242,9 @@ void Renderer::draw_header(const UiView &v) {
         }
         s.drawString(buf, BAT_X1, HDR_H / 2);
     }
-    s.setFont(&fonts::Font2);
+    s.setFont(F_M);
     button(s, SET_X0, SET_X1, "SET", false);
-    s.setFont(&fonts::Font2);
+    s.setFont(F_M);
     button(s, HOLD_X0, SCR_W, "HOLD", v.hold_on);
     s.pushSprite(dst_, 0, HDR_Y);
 }
@@ -258,23 +276,24 @@ void Renderer::draw_spectrum(const UiView &v) {
         int xi0 = x_of(v, f - FPV_BW_MARK_INNER_MHZ / 2), xi1 = x_of(v, f + FPV_BW_MARK_INNER_MHZ / 2);
         s.fillRect(xo0, 0, xo1 - xo0 + 1, H, ch_outer(c.color));
         s.fillRect(xi0, 0, xi1 - xi0 + 1, H, ch_inner(c.color));
-        dashed_vline(s, xo0, 0, H, 3, 3, ch_mid(c.color));
-        dashed_vline(s, xo1, 0, H, 3, 3, ch_mid(c.color));
-        dashed_vline(s, xi0, 0, H, 3, 3, ch_mid(c.color));
-        dashed_vline(s, xi1, 0, H, 3, 3, ch_mid(c.color));
+        dashed_vline(s, xo0, 0, H, SY(3), SY(3), ch_mid(c.color));
+        dashed_vline(s, xo1, 0, H, SY(3), SY(3), ch_mid(c.color));
+        dashed_vline(s, xi0, 0, H, SY(3), SY(3), ch_mid(c.color));
+        dashed_vline(s, xi1, 0, H, SY(3), SY(3), ch_mid(c.color));
     }
 
     /* dB grid every 10 dB */
-    s.setFont(&fonts::Font0);
+    s.setFont(F_S);
     s.setTextDatum(textdatum_t::top_left);
     s.setTextColor(C_AXIS);
+    const int fh = s.fontHeight();
     for (int d = (int)ceilf(lo / 10.0f) * 10; d <= (int)hi; d += 10) {
         int y = y_of((float)d);
         for (int x = 0; x < SCR_W; x += 4) s.drawPixel(x, y, C_GRID);
-        if (y > 8 && y < H - 2) {
+        if (y > fh && y < H - 2) {
             char b[16];
             snprintf(b, sizeof(b), "%d", d);
-            s.drawString(b, 1, y - 8);
+            s.drawString(b, 1, y - fh);
         }
     }
 
@@ -295,29 +314,30 @@ void Renderer::draw_spectrum(const UiView &v) {
             }
         };
         trace(v.col_raw, C_RAW, 1);
-        if (v.hold_on) trace(v.col_hold, C_HOLD, 3);
+        if (v.hold_on) trace(v.col_hold, C_HOLD, SX(3));
         trace(v.col_avg, C_AVG, 1);
     }
 
     /* measured centres + channel names */
-    s.setFont(&fonts::Font0);
+    s.setFont(F_S);
     s.setTextDatum(textdatum_t::top_center);
     for (int i = 0; i < v.nch; i++) {
         const UiChannel &c = v.ch[i];
         if (c.smoothed == c.smoothed) {
             int x = x_of(v, c.smoothed);
-            if (c.m.present) s.drawFastVLine(x, 10, H - 10, ch_full(c.color));
-            else dashed_vline(s, x, 10, H, 2, 3, ch_full(c.color));
+            const int top = s.fontHeight() + 2;
+            if (c.m.present) s.drawFastVLine(x, top, H - top, ch_full(c.color));
+            else dashed_vline(s, x, top, H, SY(2), SY(3), ch_full(c.color));
         }
         s.setTextColor(ch_full(c.color));
         s.drawString(c.name, x_of(v, (float)c.nominal_mhz), 1);
     }
 
     if (v.message) {
-        s.setFont(&fonts::Font2);
+        s.setFont(F_M);
         s.setTextDatum(textdatum_t::middle_center);
-        int w = s.textWidth(v.message) + 16;
-        s.fillRoundRect((SCR_W - w) / 2, H / 2 - 12, w, 24, 4, C_BTN);
+        int w = s.textWidth(v.message) + SX(16), h = s.fontHeight() + SY(8);
+        s.fillRoundRect((SCR_W - w) / 2, H / 2 - h / 2, w, h, 4, C_BTN);
         s.setTextColor(C_TEXT);
         s.drawString(v.message, SCR_W / 2, H / 2);
     }
@@ -332,16 +352,16 @@ void Renderer::draw_axis(const UiView &v) {
         float span = (float)v.plan.nbins / DSP_BINS_PER_MHZ;
         int tick = span > 80 ? 20 : span > 40 ? 10 : 5;
         int f0 = ((v.plan.start_mhz + tick - 1) / tick) * tick;
-        s.setFont(&fonts::Font0);
+        s.setFont(F_S);
         s.setTextDatum(textdatum_t::top_center);
         s.setTextColor(C_AXIS);
         for (int f = f0; (float)f < (float)v.plan.start_mhz + span; f += tick) {
             int x = x_of(v, (float)f);
-            s.drawFastVLine(x, 0, 2, C_AXIS);
+            s.drawFastVLine(x, 0, SY(2), C_AXIS);
             char b[16];
             snprintf(b, sizeof(b), "%d", f);
             int w = s.textWidth(b);
-            if (x - w / 2 >= 0 && x + w / 2 < SCR_W) s.drawString(b, x, 2);
+            if (x - w / 2 >= 0 && x + w / 2 < SCR_W) s.drawString(b, x, SY(2));
         }
     }
     s.pushSprite(dst_, 0, AXIS_Y);
@@ -377,7 +397,7 @@ void Renderer::draw_waterfall(const UiView &v) {
     if (!direct) s.endWrite();
     for (int i = 0; i < v.nch; i++) {
         int x = x_of(v, (float)v.ch[i].nominal_mhz);
-        for (int y = 0; y < WF_H; y += 4) s.drawPixel(x, y, WF_LEVELS + v.ch[i].color);
+        for (int y = 0; y < WF_H; y += SY(4)) s.drawPixel(x, y, WF_LEVELS + v.ch[i].color);
     }
     s.pushSprite(dst_, 0, WF_Y);
 }
@@ -394,29 +414,29 @@ void Renderer::readout_box(const UiView &v, const UiChannel &c, int x, int w) {
     char b[32];
     s.fillRoundRect(x + 1, 1, w - 2, RO_H - 2, 3, C_PANEL);
     s.drawRoundRect(x + 1, 1, w - 2, RO_H - 2, 3, ch_full(c.color));
-    s.setFont(&fonts::Font0);
+    s.setFont(F_S);
     s.setTextDatum(textdatum_t::top_left);
     s.setTextColor(ch_full(c.color));
-    s.drawString(c.name, x + 5, 4);
+    s.drawString(c.name, x + SX(5), SY(4));
     s.setTextColor(C_AXIS);
     snprintf(b, sizeof(b), "%d", c.nominal_mhz);
-    s.drawString(b, x + 5 + s.textWidth(c.name) + 4, 4);
+    s.drawString(b, x + SX(5) + s.textWidth(c.name) + SX(4), SY(4));
 
     bool live = c.m.present;
-    s.setFont(&fonts::Font2);
+    s.setFont(F_M);
     s.setTextDatum(textdatum_t::top_center);
     s.setTextColor(live ? C_TEXT : C_DIM);
     if (c.smoothed == c.smoothed) snprintf(b, sizeof(b), "%.2f", c.smoothed);
     else snprintf(b, sizeof(b), "----.--");
-    s.drawString(b, x + w / 2, 13);
+    s.drawString(b, x + w / 2, SY(13));
 
     float off = live ? c.smoothed - (float)c.nominal_mhz : __builtin_nanf("");
     s.setTextColor(dev_colour(off));
     if (off == off) snprintf(b, sizeof(b), "%+.2f", off);
     else snprintf(b, sizeof(b), "--");
-    s.drawString(b, x + w / 2, 29);
+    s.drawString(b, x + w / 2, SY(29));
 
-    s.setFont(&fonts::Font0);
+    s.setFont(F_S);
     s.setTextColor(live ? C_AXIS : C_DIM);
     if (live) {
         if (c.m.bw3_mhz == c.m.bw3_mhz) snprintf(b, sizeof(b), "%.0fdB bw%.1f", c.m.peak_db, c.m.bw3_mhz);
@@ -424,7 +444,7 @@ void Renderer::readout_box(const UiView &v, const UiChannel &c, int x, int w) {
     } else {
         reason_text(c.m, b, sizeof(b));
     }
-    s.drawString(b, x + w / 2, 48);
+    s.drawString(b, x + w / 2, SY(48));
 }
 
 void Renderer::readout_single(const UiView &v, const UiChannel &c) {
@@ -434,57 +454,58 @@ void Renderer::readout_single(const UiView &v, const UiChannel &c) {
     /* < and > */
     s.fillRoundRect(1, 1, ARROW_W - 2, RO_H - 2, 3, C_BTN);
     s.fillRoundRect(SCR_W - ARROW_W + 1, 1, ARROW_W - 2, RO_H - 2, 3, C_BTN);
-    s.fillTriangle(ARROW_W / 2 + 5, RO_H / 2 - 9, ARROW_W / 2 + 5, RO_H / 2 + 9, ARROW_W / 2 - 6, RO_H / 2, C_TEXT);
-    s.fillTriangle(SCR_W - ARROW_W / 2 - 5, RO_H / 2 - 9, SCR_W - ARROW_W / 2 - 5, RO_H / 2 + 9,
-                   SCR_W - ARROW_W / 2 + 6, RO_H / 2, C_TEXT);
+    const int ta = SX(5), tb = SX(6), th = SY(9);
+    s.fillTriangle(ARROW_W / 2 + ta, RO_H / 2 - th, ARROW_W / 2 + ta, RO_H / 2 + th, ARROW_W / 2 - tb, RO_H / 2, C_TEXT);
+    s.fillTriangle(SCR_W - ARROW_W / 2 - ta, RO_H / 2 - th, SCR_W - ARROW_W / 2 - ta, RO_H / 2 + th,
+                   SCR_W - ARROW_W / 2 + tb, RO_H / 2, C_TEXT);
 
     s.fillRoundRect(x0, 1, x1 - x0, RO_H - 2, 3, C_PANEL);
     s.drawRoundRect(x0, 1, x1 - x0, RO_H - 2, 3, ch_full(c.color));
 
     bool live = c.m.present;
     /* name and nominal */
-    s.setFont(&fonts::Font2);
+    s.setFont(F_M);
     s.setTextDatum(textdatum_t::top_left);
     s.setTextColor(ch_full(c.color));
-    s.drawString(c.name, x0 + 5, 3);
-    s.setFont(&fonts::Font0);
+    s.drawString(c.name, x0 + SX(5), SY(3));
+    s.setFont(F_S);
     s.setTextColor(C_AXIS);
     snprintf(b, sizeof(b), "%d MHz", c.nominal_mhz);
-    s.drawString(b, x0 + 30, 7);
+    s.drawString(b, x0 + SX(30), SY(7));
 
     /* measured centre, large */
-    s.setFont(&fonts::Font4);
+    s.setFont(F_XL);
     s.setTextColor(live ? C_TEXT : C_DIM);
     if (c.smoothed == c.smoothed) snprintf(b, sizeof(b), "%.2f", c.smoothed);
     else snprintf(b, sizeof(b), "----.--");
-    s.drawString(b, x0 + 5, 20);
-    int wv = s.textWidth(b);
-    s.setFont(&fonts::Font0);
-    s.drawString("MHz", x0 + 8 + wv, 36);
+    s.drawString(b, x0 + SX(5), SY(20));
+    int wv = s.textWidth(b), hv = s.fontHeight();
+    s.setFont(F_S);
+    s.drawString("MHz", x0 + SX(8) + wv, SY(20) + hv - s.fontHeight() - SY(2));
 
     /* deviation, top right */
     float off = live ? c.smoothed - (float)c.nominal_mhz : __builtin_nanf("");
-    s.setFont(&fonts::Font2);
+    s.setFont(F_M);
     s.setTextDatum(textdatum_t::top_right);
     s.setTextColor(dev_colour(off));
     if (off == off) snprintf(b, sizeof(b), "%+.2f MHz", off);
     else snprintf(b, sizeof(b), "-- MHz");
-    s.drawString(b, x1 - 5, 3);
+    s.drawString(b, x1 - SX(5), SY(3));
 
     /* details */
-    s.setFont(&fonts::Font0);
+    s.setFont(F_S);
     s.setTextDatum(textdatum_t::top_left);
-    const int xd = x1 - 88;
+    const int xd = x1 - SX(88);
     s.setTextColor(live ? C_AXIS : C_DIM);
     if (c.m.peak_db == c.m.peak_db) snprintf(b, sizeof(b), "peak %6.1f dB", c.m.peak_db);
     else snprintf(b, sizeof(b), "peak     -- dB");
-    s.drawString(b, xd, 22);
+    s.drawString(b, xd, SY(22));
     if (c.m.snr_db == c.m.snr_db) snprintf(b, sizeof(b), "SNR  %6.1f dB", c.m.snr_db);
     else snprintf(b, sizeof(b), "SNR      -- dB");
-    s.drawString(b, xd, 32);
+    s.drawString(b, xd, SY(32));
     if (v.floor_db == v.floor_db) snprintf(b, sizeof(b), "floor%6.1f dB", v.floor_db);
     else snprintf(b, sizeof(b), "floor    -- dB");
-    s.drawString(b, xd, 42);
+    s.drawString(b, xd, SY(42));
 
     if (live) {
         char b3[12], b20[12];
@@ -498,7 +519,7 @@ void Renderer::readout_single(const UiView &v, const UiChannel &c) {
         reason_text(c.m, b, sizeof(b));
         s.setTextColor(C_DIM);
     }
-    s.drawString(b, x0 + 5, 50);
+    s.drawString(b, x0 + SX(5), SY(50));
 }
 
 void Renderer::draw_readouts(const UiView &v) {
@@ -532,34 +553,34 @@ void Renderer::draw_setup(const SetupView &sv) {
         d.drawString(t, (x0 + x1) / 2, (y0 + y1) / 2);
     };
     auto label = [&](int row, const char *t) {
-        d.setFont(&fonts::Font2);
+        d.setFont(F_M);
         d.setTextDatum(textdatum_t::middle_left);
         d.setTextColor(axis);
-        d.drawString(t, 4, SU_ROW_Y + row * SU_ROW_PITCH + SU_ROW_H / 2);
+        d.drawString(t, SX(4), SU_ROW_Y + row * SU_ROW_PITCH + SU_ROW_H / 2);
     };
     auto stepper = [&](int row, const char *value, const char *unit, bool active) {
         int y0 = SU_ROW_Y + row * SU_ROW_PITCH, y1 = y0 + SU_ROW_H;
-        box(SU_COL0, y0, SU_COL0 + SU_STEP_W, y1, "-", false, &fonts::Font4);
-        box(SCR_W - SU_STEP_W, y0, SCR_W - 1, y1, "+", false, &fonts::Font4);
+        box(SU_COL0, y0, SU_COL0 + SU_STEP_W, y1, "-", false, F_L);
+        box(SCR_W - SU_STEP_W, y0, SCR_W - 1, y1, "+", false, F_L);
         int cx = (SU_COL0 + SU_STEP_W + SCR_W - SU_STEP_W) / 2;
-        d.setFont(&fonts::Font4);
+        d.setFont(F_L);
         d.setTextDatum(textdatum_t::middle_center);
         d.setTextColor(active ? text : dim);
-        d.drawString(value, cx, (y0 + y1) / 2 - (unit ? 6 : 0));
+        d.drawString(value, cx, (y0 + y1) / 2 - (unit ? SY(6) : 0));
         if (unit) {
-            d.setFont(&fonts::Font0);
+            d.setFont(F_S);
             d.setTextColor(axis);
-            d.drawString(unit, cx, y1 - 6);
+            d.drawString(unit, cx, y1 - SY(6));
         }
     };
 
     /* title row */
-    d.setFont(&fonts::Font4);
+    d.setFont(F_L);
     d.setTextDatum(textdatum_t::middle_left);
     d.setTextColor(text);
-    d.drawString("SETUP", 6, SU_TITLE_H / 2);
-    box(SU_CAL_X0, 2, SU_CAL_X1, SU_TITLE_H - 2, "TOUCH CAL", false, &fonts::Font2);
-    box(SU_DONE_X0, 2, SCR_W - 1, SU_TITLE_H - 2, "DONE", true, &fonts::Font4);
+    d.drawString("SETUP", SX(6), SU_TITLE_H / 2);
+    box(SU_CAL_X0, 2, SU_CAL_X1, SU_TITLE_H - 2, "TOUCH CAL", false, F_M);
+    box(SU_DONE_X0, 2, SCR_W - 1, SU_TITLE_H - 2, "DONE", true, F_L);
 
     /* MODE */
     label(0, "MODE");
@@ -568,7 +589,7 @@ void Renderer::draw_setup(const SetupView &sv) {
         static const Mode M[3] = {MODE_4CH, MODE_3CH, MODE_1CH};
         for (int i = 0; i < 3; i++)
             box(SU_COL0 + i * w + 1, y0, SU_COL0 + (i + 1) * w - 2, y1, mode_label(M[i]), sv.mode == M[i],
-                &fonts::Font4);
+                F_L);
     }
     /* CH (1CH) */
     label(1, "1CH");

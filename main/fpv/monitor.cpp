@@ -42,8 +42,25 @@ extern "C" {
 namespace fpv {
 
 /* ------------------------------------------------------------------ LCD */
+#if FPV_PANEL_RESTOUCH35
+/* Waveshare Pico-ResTouch-LCD-3.5: an ILI9488 on its 16-bit parallel bus,
+ * fed from SPI through shift registers. Every SPI word is 16 bits (commands
+ * and parameters too: dlen_16bit), so pixels go as RGB565 - LovyanGFX's
+ * ILI9488 would pick 18-bit colour for an SPI bus. Nothing can be read back. */
+struct Panel_ResTouch35 : public lgfx::Panel_ILI9488 {
+    void setColorDepth_impl(lgfx::color_depth_t) override {
+        _write_depth = lgfx::rgb565_2Byte;
+        _read_depth = lgfx::rgb565_2Byte;
+    }
+};
+#endif
+
 class LGFX : public lgfx::LGFX_Device {
+#if FPV_PANEL_RESTOUCH35
+    Panel_ResTouch35 panel_;
+#else
     lgfx::Panel_ILI9341 panel_;
+#endif
     lgfx::Bus_SPI bus_;
     lgfx::Touch_XPT2046 touch_;
 
@@ -70,6 +87,15 @@ public:
             cfg.pin_cs = FPV_PIN_LCD_CS;
             cfg.pin_rst = FPV_PIN_LCD_RST;
             cfg.pin_busy = -1;
+#if FPV_PANEL_RESTOUCH35
+            cfg.panel_width = 320;
+            cfg.panel_height = 480;
+            cfg.offset_rotation = 0;
+            cfg.readable = false;       /* behind shift registers */
+            cfg.invert = FPV_LCD_INVERT;
+            cfg.rgb_order = false;
+            cfg.dlen_16bit = true;      /* 16-bit words: the parallel bus */
+#else
             cfg.panel_width = 240;
             cfg.panel_height = 320;
             cfg.offset_rotation = 0;
@@ -77,6 +103,7 @@ public:
             cfg.invert = false;
             cfg.rgb_order = false;
             cfg.dlen_16bit = false;
+#endif
             cfg.bus_shared = true;      /* the touch controller shares SPI */
             panel_.config(cfg);
         }
@@ -143,7 +170,7 @@ static bool touch_cal_load(uint16_t cal[8]) {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return false;
     size_t n = 8 * sizeof(uint16_t);
-    bool ok = nvs_get_blob(h, "tcal", cal, &n) == ESP_OK && n == 8 * sizeof(uint16_t);
+    bool ok = nvs_get_blob(h, FPV_TCAL_KEY, cal, &n) == ESP_OK && n == 8 * sizeof(uint16_t);
     nvs_close(h);
     return ok;
 }
@@ -151,7 +178,7 @@ static bool touch_cal_load(uint16_t cal[8]) {
 static void touch_cal_save(const uint16_t cal[8]) {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_blob(h, "tcal", cal, 8 * sizeof(uint16_t));
+    nvs_set_blob(h, FPV_TCAL_KEY, cal, 8 * sizeof(uint16_t));
     nvs_commit(h);
     nvs_close(h);
 }

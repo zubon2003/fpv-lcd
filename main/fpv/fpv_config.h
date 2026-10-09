@@ -37,7 +37,32 @@
 #define FPV_BAT_WAKE_S 60            /* while shut down, check the battery this often */
 #define FPV_BAT_ABSENT_MV 1000       /* below: no battery, running from USB */
 
+#if FPV_PANEL_RESTOUCH35
+/* Waveshare Pico-ResTouch-LCD-3.5 (480 x 320, ILI9488 + XPT2046), wired to
+ * the same XIAO pins as the 2.8" board, by the Pico GPIO names on its header:
+ *
+ *   module (Pico pin)          XIAO   GPIO
+ *   LCD_CLK  GP10 (14)         D8     8
+ *   MOSI     GP11 (15)         D10    10
+ *   MISO     GP12 (16)         D9     9     (touch data)
+ *   LCD_CS   GP9  (12)         D0     1
+ *   LCD_DC   GP8  (11)         D1     0
+ *   LCD_RST  GP15 (20)         D4     23
+ *   TP_CS    GP16 (21)         D5     24
+ *   LCD_BL   GP13 (17)         D6     11
+ *   VSYS     (39)              5V on USB / BAT+ on battery (see README)
+ *   GND      (38 etc.)         GND
+ *   TP_IRQ GP17, SD_CS GP22    -      (not used; leave the SD slot empty)
+ *
+ * The shift registers limit the clock: 20 MHz is what others run on ESP32;
+ * Waveshare quotes 60 MHz writes on the Pico. */
+#define FPV_LCD_SPI_HZ 20000000
+#define FPV_LCD_INVERT true          /* this panel needs inversion on */
+#define FPV_TCAL_KEY "tcal35"        /* own touch calibration */
+#else
 #define FPV_LCD_SPI_HZ 40000000
+#define FPV_TCAL_KEY "tcal"
+#endif
 #define FPV_TOUCH_SPI_HZ 1000000
 /* 1 or 3: landscape, pins on the left or on the right. */
 #define FPV_LCD_ROTATION 1

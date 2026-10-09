@@ -85,6 +85,12 @@ idf_component_register(SRCS "${receiver}" ${sources}
     REQUIRES ${dependencies})
 if(fpv_lcd)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE FPV_LCD_MONITOR=1)
+    idf_build_get_property(fpv_panel FPV_PANEL)
+    if(fpv_panel STREQUAL "RESTOUCH35")
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE FPV_PANEL_RESTOUCH35=1)
+    elseif(NOT fpv_panel STREQUAL "ILI9341")
+        message(FATAL_ERROR "FPV_PANEL must be ILI9341 or RESTOUCH35 (got '${fpv_panel}')")
+    endif()
 endif()
 
 # Regenerate at build time (not only CMake configure time). The embedded record

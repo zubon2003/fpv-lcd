@@ -9,7 +9,7 @@ host_dsp_ref: host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)
 	$(CC) $(CFLAGS) -DFPV_FFT_REF -o $@ host_dsp.c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/link.c -lm
 
 clean:
-	rm -rf host_dsp host_dsp_ref host_ui obj iq.bin sweep.bin *.ppm
+	rm -rf host_dsp host_dsp_ref host_ui host_ui35 obj iq.bin sweep.bin *.ppm
 
 # Screen previews: LovyanGFX in memory (Linux framebuffer platform, no device).
 LGFX := ../../components/LovyanGFX/src
@@ -26,4 +26,9 @@ obj/%.o: $(LGFX)/%
 
 host_ui: host_ui.cpp $(FPV)/ui.cpp $(FPV)/ui.hpp $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(LGFX_OBJS)
 	$(CXX) -O1 -std=gnu++17 -DLGFX_LINUX_FB -I$(LGFX) -I$(FPV) -o $@ host_ui.cpp $(FPV)/ui.cpp \
+	  -x c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/link.c -x none $(LGFX_OBJS) -lm -lpthread
+
+# The same screens at 480 x 320 (Waveshare Pico-ResTouch-LCD-3.5 build).
+host_ui35: host_ui.cpp $(FPV)/ui.cpp $(FPV)/ui.hpp $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(LGFX_OBJS)
+	$(CXX) -O1 -std=gnu++17 -DLGFX_LINUX_FB -DFPV_PANEL_RESTOUCH35=1 -I$(LGFX) -I$(FPV) -o $@ host_ui.cpp $(FPV)/ui.cpp \
 	  -x c $(FPV)/dsp.c $(FPV)/analysis.c $(FPV)/channels.c $(FPV)/link.c -x none $(LGFX_OBJS) -lm -lpthread
