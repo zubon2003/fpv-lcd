@@ -29,7 +29,7 @@ sys.path.insert(0, str(PC))
 from fpv_band_monitor import fpv_link  # noqa: E402
 from fpv_band_monitor.analysis import measure_all  # noqa: E402
 from fpv_band_monitor.channels import parse_channels  # noqa: E402
-from fpv_band_monitor.cli import _span_planner, build_parser  # noqa: E402
+from fpv_band_monitor.cli import ReceiverControl, _span_planner, build_parser  # noqa: E402
 from fpv_band_monitor.esp_sdr import EspSettings  # noqa: E402
 from fpv_band_monitor.sweep import DeviceInfo, SweepAccumulator, SweepSettings  # noqa: E402
 
@@ -41,6 +41,7 @@ class FakeFirmware(threading.Thread):
         self.stream = False
         self.span = None
         self.gain = None
+        self.lcd = True
         self.log = []
         self.stop = threading.Event()
 
@@ -82,6 +83,10 @@ class FakeFirmware(threading.Thread):
                     self.send(b"OK\n")
                 elif text == "FPV STREAM OFF":
                     self.stream = False
+                    self.lcd = True                   # STREAM OFF ends NOLCD
+                    self.send(b"OK\n")
+                elif text in ("FPV NOLCD", "FPV LCD"):
+                    self.lcd = text == "FPV LCD"
                     self.send(b"OK\n")
                 else:
                     self.send(b"ERR unknown FPV command\n")
@@ -131,9 +136,13 @@ def main():
     m, path, s = pty_pair()
     dev = FakeFirmware(m, frames)
     dev.start()
-    args = build_parser().parse_args(["--channels", ",".join(chans)])
+    args = build_parser().parse_args(["--channels", ",".join(chans), "--port", path, "--nolcd"])
+    rc = ReceiverControl(args)
+    backend = rc.resolve()                          # auto: FPV? answered -> fft
+    print(f"auto receiver on the LCD firmware: {backend}")
+    ok = ok and backend == "fft"
     grid, _los = _span_planner(args)(start, stop)
-    es = EspSettings(channels=tuple((c.name, c.freq_mhz) for c in channels))
+    es = EspSettings(backend="fft", nolcd=True, channels=tuple((c.name, c.freq_mhz) for c in channels))
     settings = SweepSettings(start_mhz=start, stop_mhz=stop, bin_hz=78125, gain=40, port=path)
     stop_ev = threading.Event()
     got = []
@@ -143,11 +152,15 @@ def main():
             print(f"connected: {item.identity}")
             continue
         got.append(item)
+        lcd_while_streaming = dev.lcd
         if len(got) == 5 or time.monotonic() - t0 > 5:
             stop_ev.set()
             break
+    time.sleep(0.2)
     dev.stop.set()
-    print(f"device saw: {dev.span!r}, {dev.gain!r}; frames received: {len(got)}")
+    print(f"device saw: {dev.span!r}, {dev.gain!r}; frames received: {len(got)}; "
+          f"LCD while streaming {'on' if lcd_while_streaming else 'off'}, after {'on' if dev.lcd else 'off'}")
+    ok = ok and not lcd_while_streaming and dev.lcd
     ok = ok and dev.span == "FPV SPAN 5670.000 5835.000 E2,E1,F3,F5" and dev.gain == "FPV GAIN 40" and len(got) == 5
 
     line = got[0]

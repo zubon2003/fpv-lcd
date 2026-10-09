@@ -263,6 +263,7 @@ static bool s_stream;                       /* SWEEP frames on */
 static uint32_t s_stream_seq;
 static uint16_t *s_codes;                   /* frame payload */
 static volatile bool s_raw;                 /* PC drives the radio (ESP-SDR protocol) */
+static volatile bool s_nolcd;               /* FPV NOLCD: LCD off, sweep flat out */
 static const char *mode_name(int m) { return m == MODE_4CH ? "4CH" : m == MODE_3CH ? "3CH" : m == MODE_1CH ? "1CH" : "PC"; }
 static volatile int s_shown_mode;           /* what the LCD runs, for STATE? */
 
@@ -289,7 +290,10 @@ static void send_sweep(const sweep_plan_t &plan, const float *sweep, int64_t t_u
     int n = snprintf(h, sizeof(h), "SWEEP %u %d %d %d %u %08x\n", (unsigned)++s_stream_seq, plan.start_mhz,
                      plan.nbins, DSP_BIN_HZ, (unsigned)(t_us / 1000), (unsigned)crc);
     int64_t deadline = esp_timer_get_time() + 300000;
-    if (!link_send(h, (size_t)n, deadline) || !link_send(s_codes, bytes, deadline)) s_stream = false;
+    if (!link_send(h, (size_t)n, deadline) || !link_send(s_codes, bytes, deadline)) {
+        s_stream = false;                    /* host gone: the LCD comes back */
+        s_nolcd = false;
+    }
 }
 
 static void fpv_command(const char *line, const sweep_plan_t &plan, int gain) {
@@ -303,13 +307,25 @@ static void fpv_command(const char *line, const sweep_plan_t &plan, int gain) {
         link_reply(r);
         return;
     case FC_STATE:
-        snprintf(r, sizeof(r), "STATE mode=%s ch=%s gain=%d snr=%d start=%d nbins=%d hops=%d stream=%d bat_mv=%d\n",
+        snprintf(r, sizeof(r),
+                 "STATE mode=%s ch=%s gain=%d snr=%d start=%d nbins=%d hops=%d stream=%d lcd=%d bat_mv=%d\n",
                  mode_name(s_shown_mode), SINGLE_CHANNELS[s_set.single], gain, s_set.snr, plan.start_mhz,
-                 plan.nbins, plan.nhops, s_stream ? 1 : 0, (int)s_bat_mv);
+                 plan.nbins, plan.nhops, s_stream ? 1 : 0, s_nolcd ? 0 : 1, (int)s_bat_mv);
         link_reply(r);
         return;
     case FC_STREAM:
         s_stream = c.ival != 0;
+        if (!s_stream) s_nolcd = false;
+        link_reply("OK\n");
+        return;
+    case FC_NOLCD:
+        s_nolcd = true;
+        xTaskNotifyGive(s_ui_task);
+        link_reply("OK\n");
+        return;
+    case FC_LCD:
+        s_nolcd = false;
+        xTaskNotifyGive(s_ui_task);
         link_reply("OK\n");
         return;
     case FC_BAD:
@@ -408,13 +424,15 @@ static void receiver_loop() {
         if (aborted) continue;
 
         int64_t t_done = esp_timer_get_time();
-        xSemaphoreTake(s_lock, portMAX_DELAY);
-        memcpy(s_shared, s_work, sizeof(float) * plan.nbins);
-        s_shared_gen = gen;
-        s_shared_seq++;
-        s_shared_t_us = t_done;
-        xSemaphoreGive(s_lock);
-        xTaskNotifyGive(s_ui_task);
+        if (!s_nolcd) {                         /* NOLCD: the UI does nothing */
+            xSemaphoreTake(s_lock, portMAX_DELAY);
+            memcpy(s_shared, s_work, sizeof(float) * plan.nbins);
+            s_shared_gen = gen;
+            s_shared_seq++;
+            s_shared_t_us = t_done;
+            xSemaphoreGive(s_lock);
+            xTaskNotifyGive(s_ui_task);
+        }
         if (s_stream) send_sweep(plan, s_work, t_done);
     }
 }
@@ -798,6 +816,7 @@ static void ui_task(void *) {
     Hit touch_hit = HIT_NONE;
     bool in_setup = false;                /* the setup screen is up */
     bool raw_shown = false;
+    bool lcd_off = false;                 /* FPV NOLCD in effect */
     SetupHit setup_touch = SH_NONE;
     /* Partial updates: the SPI transfer is most of the drawing cost, and the
      * CPU waits for it. Spectrum at most 10/s, waterfall when it gains a row,
@@ -829,6 +848,35 @@ static void ui_task(void *) {
         }
 
         int64_t now0 = esp_timer_get_time();
+        /* FPV NOLCD: panel asleep, backlight off, no processing; a tap (or
+         * FPV LCD / the end of the stream) brings it back */
+        if (s_nolcd != lcd_off) {
+            lcd_off = s_nolcd;
+            if (lcd_off) {
+                s_lcd.fillScreen(TFT_BLACK);
+                backlight(false);
+                s_lcd.sleep();
+            } else {
+                s_lcd.wakeup();
+                backlight(true);
+                in_setup = false;
+                s_lcd.fillScreen(TFT_BLACK);
+                reset_measurement();
+                s_ui.draw_axis(s_view);
+                s_ui.draw_frame(s_view);
+                t_spec = t_ro = t_hdr = now0;
+            }
+        }
+        if (lcd_off) {
+            apply_pc_commands();                 /* still take settings, draw nothing */
+            int32_t tx, ty;
+            if (s_lcd.getTouch(&tx, &ty)) {
+                s_nolcd = false;                 /* woken by hand */
+                touching = true;                 /* this tap does nothing else */
+            }
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
         if (apply_pc_commands()) {               /* settings from the PC */
             if (in_setup) { s_edit = s_set; s_ui.draw_setup(setup_view()); }
             else { s_ui.draw_all(s_view); t_spec = t_ro = t_hdr = now0; }

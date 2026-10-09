@@ -58,6 +58,8 @@ fpv_cmd_kind_t fpv_parse(const char *line, const char *const *single, int nsingl
     if (strcmp(w, "FPV")) return c->kind = FC_NONE;
     p = word(p, w, sizeof(w));
     if (!strcmp(w, "STATE?")) return c->kind = FC_STATE;
+    if (!strcmp(w, "NOLCD")) return c->kind = FC_NOLCD;
+    if (!strcmp(w, "LCD")) return c->kind = FC_LCD;
     p = word(p, a, sizeof(a));
     if (!strcmp(w, "STREAM")) {
         if (!strcmp(a, "ON")) c->ival = 1;

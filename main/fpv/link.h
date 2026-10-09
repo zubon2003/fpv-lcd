@@ -12,6 +12,10 @@
  *   FPV CH <E2|E1|F1|F3|F4|F5>   the 1CH channel
  *   FPV GAIN <0..60|AGC>
  *   FPV SNR <6..30>              detection threshold, dB above the floor
+ *   FPV NOLCD                    LCD off, no on-screen processing: every cycle
+ *                                goes to sweeping (ends with STREAM OFF, a lost
+ *                                host, FPV LCD, or a tap on the screen)
+ *   FPV LCD                      LCD back on
  *   FPV SPAN <start> <stop> [ch,ch,...]
  *                                sweep any span (MHz) and show up to 4
  *                                channels ("PC" mode on the LCD)
@@ -38,6 +42,7 @@ void fpv_encode(const float *lin, int n, uint16_t *out);
 
 typedef enum {
     FC_BAD = -1, FC_NONE = 0, FC_HELLO, FC_STATE, FC_STREAM, FC_MODE, FC_CH, FC_GAIN, FC_SNR, FC_SPAN,
+    FC_NOLCD, FC_LCD,
 } fpv_cmd_kind_t;
 
 typedef struct {
