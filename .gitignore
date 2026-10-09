@@ -44,3 +44,13 @@ tests/fpv_host/obj/
 tests/fpv_host/*.bin
 tests/fpv_host/__pycache__/
 tests/fpv_host/cycles/*.elf
+
+# host test binaries and data
+/tests/fpv_host/host_dsp
+/tests/fpv_host/host_dsp_ref
+/tests/fpv_host/host_ui
+/tests/fpv_host/host_ui35
+/tests/fpv_host/obj/
+/tests/fpv_host/*.bin
+/tests/fpv_host/*.ppm
+/components/LovyanGFX/
