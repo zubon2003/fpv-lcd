@@ -57,7 +57,7 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
 <main>
   <header>
     <h1>FPV バンドモニタ ファーム書き込み</h1>
-    <p class="lead">XIAO ESP32-C5 で動く FPV 5.8 GHz（FM-ATV）バンドモニタ・液晶版のファームを、ブラウザから USB で書き込みます。E2 E1 F1 F3 F4 F5 の監視、PC 版（fft / iq）との接続にも対応。</p>
+    <p class="lead">XIAO ESP32-C5 で動く FPV 5.8 GHz（FM-ATV）バンドモニタ・液晶版のファームを、ブラウザから USB で書き込みます。グループ（4CH / 4CH2 / 4CH3 / 3CH）の監視、グループごとの Wi-Fi チェック（受信のみ）、PC 版（fft / iq）との接続に対応。</p>
   </header>
 
   <section aria-labelledby="h-panel">
@@ -69,9 +69,9 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
         <span>Waveshare、480×320、ILI9488 + XPT2046。下駄基板の配線</span>
       </label>
       <label class="panel-opt">
-        <input type="radio" name="panel" value="ili9341" id="panel-ili9341">
-        <strong>2.8" ILI9341</strong>
-        <span>320×240、ILI9341 + XPT2046 の SPI 液晶</span>
+        <input type="radio" name="panel" value="captouch35" id="panel-captouch35">
+        <strong>3.5" Capacitive Touch LCD</strong>
+        <span>Waveshare、480×320、ST7796S + FT6336U（静電容量式）。専用基板またはジャンパ線</span>
       </label>
     </div>
     <p class="note">結線図：<a href="wiring/restouch35.html">3.5" Pico-ResTouch-LCD-3.5</a> ・
@@ -86,13 +86,13 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
         <span slot="unsupported" class="warn">このブラウザは USB 書き込み（Web Serial）に対応していません。パソコンの Chrome か Edge で開いてください。</span>
         <span slot="not-allowed" class="warn">このページは https で開く必要があります。</span>
       </esp-web-install-button>
-      <p class="note">ファームのバージョン <span class="mono" id="fw-version">09b6ffd</span> ・ チップ ESP32-C5 ・ アドレス 0x0 に 1 ファイル</p>
+      <p class="note">ファームのバージョン <span class="mono" id="fw-version">1e5ff84</span> ・ チップ ESP32-C5 ・ アドレス 0x0 に 1 ファイル</p>
     </div>
     <ol>
       <li>XIAO ESP32-C5 を USB-C でパソコンにつなぐ。</li>
       <li>「書き込む」を押し、出てきた一覧から XIAO のポート（USB JTAG/serial debug unit、Windows では「USB シリアル デバイス (COMx)」）を選ぶ。</li>
       <li>「消去してから書き込む」を選ぶと、保存した設定（モード・ゲイン・タッチ校正）も消える。ふつうは消去しなくてよい。</li>
-      <li>終わったら XIAO の RESET を 1 回押す。初回は液晶にタッチ校正の画面が出る（10 秒触らなければ既定値で進む）。</li>
+      <li>終わったら XIAO の RESET を 1 回押す。ResTouch は初回に液晶へタッチ校正の画面が出る（10 秒触らなければ既定値で進む）。静電容量式は校正不要。</li>
     </ol>
     <p class="warn"><strong>つながらないとき：</strong>XIAO の BOOT を押したまま RESET を押して離し、BOOT を離してから、もう一度「書き込む」。他のアプリ（PC 版モニタ、ESP-WebSDR など）がポートを使っていたら閉じる。</p>
   </section>
@@ -100,8 +100,8 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
   <section aria-labelledby="h-manual">
     <h2 id="h-manual">コマンドで書く場合</h2>
     <p>ファイルを保存して esptool で 0x0 に書き込む：
-      <a href="firmware/fpv-lcd-xiao-c5-restouch35.bin">3.5" 版</a> ・
-      <a href="firmware/fpv-lcd-xiao-c5-ili9341.bin">2.8" 版</a></p>
+      <a href="firmware/fpv-lcd-xiao-c5-restouch35.bin">3.5" ResTouch 版</a> ・
+      <a href="firmware/fpv-lcd-xiao-c5-captouch35.bin">3.5" 静電容量式版</a></p>
     <pre><code>python -m esptool --chip esp32c5 write-flash 0x0 fpv-lcd-xiao-c5-restouch35.bin</code></pre>
   </section>
 
@@ -111,7 +111,7 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
   </footer>
 </main>
 <script>
-  const labels = { restouch35: '3.5" ResTouch', ili9341: '2.8" ILI9341' };
+  const labels = { restouch35: '3.5" ResTouch', captouch35: '3.5" 静電容量式' };
   const installer = document.getElementById('installer');
   const selLabel = document.getElementById('sel-label');
   for (const r of document.querySelectorAll('input[name="panel"]')) {
