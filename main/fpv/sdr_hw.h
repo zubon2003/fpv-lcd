@@ -18,6 +18,12 @@ int sdr_hw_gain_max(void);
  * pointer stays valid until the next capture. */
 bool sdr_hw_capture(unsigned n, const uint32_t **iq);
 
+/* Receive only: tune the Wi-Fi driver (null mode, promiscuous, never
+ * transmits) to a Wi-Fi channel with the hardware AGC and hand every frame
+ * received in ms to cb (a wifi_promiscuous_cb_t). The next sdr_hw_tune
+ * prepares the SDR receiver again; set the gain again too. */
+bool sdr_hw_wifi_listen(unsigned channel, unsigned ms, void (*cb)(void *buf, int type));
+
 /* Hand one stock ESP-SDR protocol line to the firmware's own handler. */
 void sdr_hw_command(char *line);
 

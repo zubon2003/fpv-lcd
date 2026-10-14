@@ -280,6 +280,21 @@ void sdr_hw_gain(int index) {
     gain_apply();
 }
 int sdr_hw_gain_max(void) { return (int)gain_max(); }
+bool sdr_hw_wifi_listen(unsigned channel, unsigned ms, void (*cb)(void *buf, int type)) {
+#if CONFIG_IDF_TARGET_ESP32C5
+    static bool dual_band;
+    if(!dual_band){dual_band=true;(void)esp_wifi_set_band_mode(WIFI_BAND_MODE_AUTO);}
+#endif
+    gain_mode=GAIN_HARDWARE;gain_apply();
+    wifi_promiscuous_filter_t f={.filter_mask=WIFI_PROMIS_FILTER_MASK_ALL};
+    (void)esp_wifi_set_promiscuous_filter(&f);
+    (void)esp_wifi_set_promiscuous_rx_cb((wifi_promiscuous_cb_t)cb);
+    esp_err_t e=esp_wifi_set_channel((uint8_t)channel,WIFI_SECOND_CHAN_NONE);
+    if(e==ESP_OK)vTaskDelay(pdMS_TO_TICKS(ms));
+    (void)esp_wifi_set_promiscuous_rx_cb(NULL);
+    rx_ready=false;
+    return e==ESP_OK;
+}
 /* One line of the stock ESP-SDR protocol (FREQ, CAP20, GAIN, ...), replied
  * on the serial port it came from. */
 void sdr_hw_command(char *line) { handle_command(line); }

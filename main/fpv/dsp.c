@@ -163,6 +163,15 @@ static void fft_inplace(void) {
 static inline int32_t iq10_i(uint32_t w) { return (int32_t)(w << 22) >> 22; }
 static inline int32_t iq10_q(uint32_t w) { return (int32_t)((w >> 10) << 22) >> 22; }
 
+unsigned dsp_clipped(const uint32_t *iq, unsigned n) {
+    unsigned c = 0;
+    for (unsigned k = 0; k < n; k++) {
+        int32_t i = iq10_i(iq[k]), q = iq10_q(iq[k]);
+        c += (i >= 510 || i <= -511 || q >= 510 || q <= -511);
+    }
+    return c;
+}
+
 void dsp_hop_psd(const uint32_t *iq, unsigned n, float *psd) {
     unsigned nseg = n >= N ? (n - N) / SEG_HOP + 1 : 0;
     memset(s_acc, 0, N * sizeof(*s_acc));

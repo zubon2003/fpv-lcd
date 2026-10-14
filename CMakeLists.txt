@@ -9,8 +9,9 @@ endif()
 option(ESP_SDR_STREAMING "Build the S31 Ethernet/high-speed USB receiver" OFF)
 # Stand-alone LCD band monitor (ESP32-C5): idf.py -D FPV_LCD_MONITOR=ON ...
 option(FPV_LCD_MONITOR "Build the stand-alone FPV band monitor on an ILI9341 LCD" OFF)
-# Its display: ILI9341 (2.8" 320x240) or RESTOUCH35 (Waveshare Pico-ResTouch-LCD-3.5, 480x320)
-set(FPV_PANEL "ILI9341" CACHE STRING "FPV monitor display: ILI9341 or RESTOUCH35")
+# Its display: ILI9341 (2.8" 320x240), RESTOUCH35 (Waveshare Pico-ResTouch-LCD-3.5, 480x320)
+# or CAPTOUCH35 (Waveshare 3.5inch Capacitive Touch LCD, ST7796S + FT6336U, 480x320)
+set(FPV_PANEL "ILI9341" CACHE STRING "FPV monitor display: ILI9341, RESTOUCH35 or CAPTOUCH35")
 # Retune diagnostics (CALPROBE / CALCACHE commands); not for releases
 option(FPV_CALPROBE "FPV monitor: retune timing / calibration probe commands" OFF)
 if(ESP_SDR_STREAMING)

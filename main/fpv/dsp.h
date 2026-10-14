@@ -37,6 +37,8 @@ bool dsp_init(void);
 
 /* iq: n IQ10 words. psd: DSP_NFFT linear powers, index DSP_NFFT/2 = LO. */
 void dsp_hop_psd(const uint32_t *iq, unsigned n, float *psd);
+/* Samples of the n IQ10 words with I or Q at the ADC's rails (saturated). */
+unsigned dsp_clipped(const uint32_t *iq, unsigned n);
 
 /* Whole-MHz LO plan over [start, stop]; 0 on success. */
 int sweep_plan(sweep_plan_t *p, float start_mhz, float stop_mhz, int step_mhz);

@@ -2,12 +2,13 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include "channels.h"
 #include "fpv_config.h"
 
 namespace fpv {
 
 /* Scale of the 320 x 240 layout: SX horizontal, SY vertical; fonts by role. */
-#if FPV_PANEL_RESTOUCH35
+#if FPV_SCREEN_480
 static constexpr int SX(int v) { return v * 3 / 2; }
 static constexpr int SY(int v) { return v * 4 / 3; }
 #define F_S (&fonts::DejaVu12)
@@ -29,6 +30,7 @@ enum : uint8_t {
     C_BG = 0, C_GRID, C_AXIS, C_TEXT, C_DIM, C_RAW, C_AVG, C_HOLD, C_PANEL,
     C_BTN, C_BTN_ON, C_DEV_OK, C_DEV_WARN, C_DEV_BAD, C_DEV_IDLE, C_ERR,
     C_CH0 = 16,   /* + 4 * slot + {0 full, 1 mid, 2 inner band, 3 outer band} */
+    C_OK_BG = 40, C_WARN_BG, C_BAD_BG,   /* readout panels tinted by the deviation */
 };
 static const uint32_t UI_RGB[16] = {
     0x0e0e12, 0x262632, 0x8a8a9a, 0xf0f0f6, 0x5a5a68, 0x50506a, 0xf2f2f8,
@@ -64,6 +66,9 @@ static void ui_palette(LGFX_Sprite &s) {
         set_rgb(s, ch_inner(c), blend(CH_RGB[c], UI_RGB[C_BG], 0.30f));
         set_rgb(s, ch_outer(c), blend(CH_RGB[c], UI_RGB[C_BG], 0.13f));
     }
+    set_rgb(s, C_OK_BG, blend(UI_RGB[C_DEV_OK], UI_RGB[C_PANEL], 0.22f));
+    set_rgb(s, C_WARN_BG, blend(UI_RGB[C_DEV_WARN], UI_RGB[C_PANEL], 0.22f));
+    set_rgb(s, C_BAD_BG, blend(UI_RGB[C_DEV_BAD], UI_RGB[C_PANEL], 0.22f));
 }
 
 /* Waterfall palette: viridis on 0..249, channel colours on 250..255. */
@@ -87,6 +92,8 @@ static void wf_palette(LGFX_Sprite &s) {
 const char *mode_label(Mode m) {
     switch (m) {
     case MODE_4CH: return "4CH";
+    case MODE_4CH2: return "4CH2";
+    case MODE_4CH3: return "4CH3";
     case MODE_3CH: return "3CH";
     case MODE_PC: return "PC";
     default: return "1CH";
@@ -109,52 +116,77 @@ static uint8_t dev_colour(float off) {
     return C_DEV_BAD;
 }
 
+/* readout panel: tinted by the deviation's colour, plain without a signal */
+static uint8_t panel_colour(float off) {
+    uint8_t c = dev_colour(off);
+    return c == C_DEV_OK ? C_OK_BG : c == C_DEV_WARN ? C_WARN_BG : c == C_DEV_BAD ? C_BAD_BG : C_PANEL;
+}
+
 /* -------------------------------------------------------------- hit test */
-/* Header: [MODE 0..63] status battery [SET 196..255] [HOLD 258..319] (on the
- * 320 px screen). Taps reach 24 px below it (about 7 mm in all) so a
+/* Header: [channels 0..121] status battery [SETUP 196..255] [HOLD 258..319] (on
+ * the 320 px screen). Taps reach 24 px below it (about 7 mm in all) so a
  * fingertip can hit them. */
-constexpr int MODE_X1 = SX(64), BAT_X1 = SX(192), SET_X0 = SX(196), SET_X1 = SX(256), HOLD_X0 = SX(258);
+constexpr int MODE_X1 = SX(122), BAT_X1 = SX(192), SET_X0 = SX(196), SET_X1 = SX(256), HOLD_X0 = SX(258);
 constexpr int HDR_TAP_H = HDR_H + SY(24);
 constexpr int ARROW_W = SX(44);   /* 1ch readout: < and > buttons (8 mm) */
 
 Hit hit_test(const UiView &v, int x, int y) {
     if (y < HDR_TAP_H) {
-        if (x < MODE_X1 + SX(8)) return HIT_MODE;
+        if (x < MODE_X1 + SX(4)) return HIT_MODE;
         if (x >= SET_X0 - SX(4) && x < SET_X1 + 1) return HIT_SETUP;
         if (x >= HOLD_X0 - 1) return HIT_HOLD;
         return HIT_NONE;
     }
     if (y < RO_Y) return HIT_PLOT;
-    if (v.mode == MODE_1CH) {
+    if (v.mode == MODE_1CH && v.nch == 1) {
         if (x < ARROW_W) return HIT_CH_PREV;
         if (x >= SCR_W - ARROW_W) return HIT_CH_NEXT;
+        return HIT_BACK;
+    }
+    if (v.mode != MODE_PC && v.nch > 1) {
+        int i = x / (SCR_W / v.nch);
+        if (i > v.nch - 1) i = v.nch - 1;
+        return (Hit)(HIT_CARD0 + i);
     }
     return HIT_NONE;
 }
 
-/* Setup layout: title row, then MODE / CH / GAIN / SNR rows. */
+/* Setup layout: title row, then GAIN / DETECT / INFO / TOUCH rows. */
 constexpr int SU_TITLE_H = SY(40), SU_ROW_Y = SY(44), SU_ROW_PITCH = SY(49), SU_ROW_H = SY(45);
 constexpr int SU_COL0 = SX(62), SU_STEP_W = SX(64);
-constexpr int SU_CAL_X0 = SX(124), SU_CAL_X1 = SX(220), SU_DONE_X0 = SX(226);
+constexpr int SU_CAL_X1 = SU_COL0 + SX(120), SU_DONE_X0 = SX(226);
 
 SetupHit setup_hit(int x, int y) {
-    if (y < SU_TITLE_H) {
-        if (x >= SU_DONE_X0) return SH_DONE;
-        if (x >= SU_CAL_X0 && x < SU_CAL_X1) return SH_CAL;
-        return SH_NONE;
-    }
+    if (y < SU_TITLE_H) return x >= SU_DONE_X0 ? SH_DONE : SH_NONE;
     int row = (y - SU_ROW_Y + 2) / SU_ROW_PITCH;
     if (y < SU_ROW_Y - 2 || row > 3 || x < SU_COL0 - 2) return SH_NONE;
-    if (row == 0) {
-        int w = (SCR_W - SU_COL0) / 3;
-        int i = (x - SU_COL0) / w;
-        return i <= 0 ? SH_MODE_4 : i == 1 ? SH_MODE_3 : SH_MODE_1;
-    }
+    if (row == 3) return x < SU_CAL_X1 ? SH_CAL : SH_NONE;
+    if (row == 2) return SH_NONE;
     bool left = x < SU_COL0 + SU_STEP_W + SX(4), right = x >= SCR_W - SU_STEP_W - SX(4);
     if (!left && !right) return SH_NONE;
-    if (row == 1) return left ? SH_CH_PREV : SH_CH_NEXT;
-    if (row == 2) return left ? SH_GAIN_DOWN : SH_GAIN_UP;
+    if (row == 0) return left ? SH_GAIN_DOWN : SH_GAIN_UP;
     return left ? SH_SNR_DOWN : SH_SNR_UP;
+}
+
+/* Mode list and Wi-Fi page: a title row with CLOSE (the Wi-Fi page has SCAN
+ * left of it), then the content. */
+constexpr int PG_TITLE_H = SY(36), PG_CLOSE_X0 = SU_DONE_X0;
+constexpr int PG_BTN2_X0 = SX(140), PG_BTN2_X1 = SX(220);
+constexpr int MODE_ROW_H = (SCR_H - PG_TITLE_H) / GROUP_COUNT;
+constexpr int MODE_WIFI_X0 = SCR_W - SX(62);   /* each group's WiFi button */
+
+int modes_hit(int x, int y, bool *wifi) {
+    *wifi = false;
+    if (y < PG_TITLE_H) return x >= PG_CLOSE_X0 ? PICK_CLOSE : PICK_NONE;
+    int i = (y - PG_TITLE_H) / MODE_ROW_H;
+    if (i > GROUP_COUNT - 1) i = GROUP_COUNT - 1;
+    *wifi = x >= MODE_WIFI_X0 - SX(2);
+    return i;
+}
+
+int wifi_hit(int x, int y) {
+    if (y >= PG_TITLE_H) return PICK_NONE;
+    return x >= PG_CLOSE_X0 ? PICK_CLOSE : (x >= PG_BTN2_X0 && x < PG_BTN2_X1) ? PICK_RESCAN : PICK_NONE;
 }
 
 /* --------------------------------------------------------------- sprites */
@@ -212,39 +244,60 @@ void Renderer::draw_header(const UiView &v) {
     LGFX_Sprite &s = hdr_;
     char buf[48];
     s.fillScreen(C_BG);
+
+    /* channels / mode: the names in their colours, a down arrow: the list */
+    s.fillRoundRect(0, 1, MODE_X1, HDR_H - 2, SY(3), C_BTN);
     s.setFont(F_M);
-    button(s, 0, MODE_X1, mode_label(v.mode), true);
+    s.setTextDatum(textdatum_t::middle_left);
+    int x = SX(5);
+    const int gap = s.textWidth(" ");
+    if (v.mode == MODE_1CH || v.mode == MODE_PC) {
+        const char *t = v.mode == MODE_PC ? "PC" : mode_label(v.back_mode);   /* 1CH: its group */
+        s.setTextColor(C_AXIS);
+        s.drawString(t, x, HDR_H / 2);
+        x += s.textWidth(t) + gap;
+    }
+    for (int i = 0; i < v.nch; i++) {
+        s.setTextColor(ch_full(v.ch[i].color));
+        s.drawString(v.ch[i].name, x, HDR_H / 2);
+        x += s.textWidth(v.ch[i].name) + gap;
+    }
+    const int ax = MODE_X1 - SX(8), ah = SY(3);
+    s.fillTriangle(ax - SX(4), HDR_H / 2 - ah, ax + SX(4), HDR_H / 2 - ah, ax, HDR_H / 2 + ah, C_AXIS);
 
     s.setFont(F_S);
-    s.setTextDatum(textdatum_t::middle_left);
     if (v.rx_errors) {
-        snprintf(buf, sizeof(buf), "RX ERR %u", v.rx_errors);
+        s.setTextDatum(textdatum_t::middle_left);
+        snprintf(buf, sizeof(buf), "ERR %u", v.rx_errors);
         s.setTextColor(C_ERR);
-    } else if (v.floor_db == v.floor_db) {
-        snprintf(buf, sizeof(buf), "%4.1f/s fl%.0f", v.sweeps_per_s, v.floor_db);
-        s.setTextColor(C_AXIS);
-    } else {
-        snprintf(buf, sizeof(buf), "waiting");
-        s.setTextColor(C_AXIS);
+        s.drawString(buf, MODE_X1 + SX(5), HDR_H / 2);
     }
-    s.drawString(buf, MODE_X1 + SX(4), HDR_H / 2);
 
-    /* battery, right-aligned before SET */
+    /* battery: icon and volts, right-aligned before SET */
     if (v.bat_mv != 0) {
         s.setTextDatum(textdatum_t::middle_right);
         if (v.bat_mv < FPV_BAT_ABSENT_MV) {
-            snprintf(buf, sizeof(buf), "USB");
             s.setTextColor(C_AXIS);
+            s.drawString("USB", BAT_X1, HDR_H / 2);
         } else {
-            snprintf(buf, sizeof(buf), "%d.%02dV", v.bat_mv / 1000, (v.bat_mv % 1000) / 10);
             bool low = FPV_BAT_CUTOFF_MV && v.bat_mv < FPV_BAT_CUTOFF_MV + 200;
-            s.setTextColor(low ? C_DEV_BAD : C_TEXT);
+            uint8_t col = low ? C_DEV_BAD : C_TEXT;
+            snprintf(buf, sizeof(buf), "%d.%02dV", v.bat_mv / 1000, (v.bat_mv % 1000) / 10);
+            s.setTextColor(low ? C_DEV_BAD : C_AXIS);
+            s.drawString(buf, BAT_X1, HDR_H / 2);
+            const int bw = SX(18), bh = HDR_H - SY(7);
+            const int bx = BAT_X1 - s.textWidth(buf) - SX(5) - bw - SX(2), by = (HDR_H - bh) / 2;
+            s.drawRect(bx, by, bw, bh, col);
+            s.fillRect(bx + bw, by + bh / 4, SX(2), bh - 2 * (bh / 4), col);
+            float f = (float)(v.bat_mv - FPV_BAT_EMPTY_MV) / (FPV_BAT_FULL_MV - FPV_BAT_EMPTY_MV);
+            if (f < 0) f = 0;
+            if (f > 1) f = 1;
+            int fw = (int)((bw - 4) * f + 0.5f);
+            if (fw > 0) s.fillRect(bx + 2, by + 2, fw, bh - 4, col);
         }
-        s.drawString(buf, BAT_X1, HDR_H / 2);
     }
     s.setFont(F_M);
-    button(s, SET_X0, SET_X1, "SET", false);
-    s.setFont(F_M);
+    button(s, SET_X0, SET_X1, "SETUP", false);
     button(s, HOLD_X0, SCR_W, "HOLD", v.hold_on);
     s.pushSprite(dst_, 0, HDR_Y);
 }
@@ -282,17 +335,20 @@ void Renderer::draw_spectrum(const UiView &v) {
         dashed_vline(s, xi1, 0, H, SY(3), SY(3), ch_mid(c.color));
     }
 
-    /* dB grid every 10 dB */
+    /* dB grid every 10 dB (20 on a tall range); the top label has the unit */
     s.setFont(F_S);
     s.setTextDatum(textdatum_t::top_left);
     s.setTextColor(C_AXIS);
     const int fh = s.fontHeight();
-    for (int d = (int)ceilf(lo / 10.0f) * 10; d <= (int)hi; d += 10) {
+    const int step = hi - lo > 60 ? 20 : 10;
+    bool unit = true;
+    for (int d = (int)floorf(hi / step) * step; (float)d >= lo; d -= step) {
         int y = y_of((float)d);
         for (int x = 0; x < SCR_W; x += 4) s.drawPixel(x, y, C_GRID);
         if (y > fh && y < H - 2) {
             char b[16];
-            snprintf(b, sizeof(b), "%d", d);
+            snprintf(b, sizeof(b), unit ? "%d dB" : "%d", d);
+            unit = false;
             s.drawString(b, 1, y - fh);
         }
     }
@@ -331,6 +387,18 @@ void Renderer::draw_spectrum(const UiView &v) {
         }
         s.setTextColor(ch_full(c.color));
         s.drawString(c.name, x_of(v, (float)c.nominal_mhz), 1);
+    }
+
+    /* the ADC clips: too much gain (or a VTX very close) */
+    if (v.clip_permille >= FPV_SAT_PERMILLE) {
+        char b[24];
+        snprintf(b, sizeof(b), "SAT %d%%", (v.clip_permille + 5) / 10);
+        s.setFont(F_M);
+        s.setTextDatum(textdatum_t::middle_center);
+        int w = s.textWidth(b) + SX(10), h = s.fontHeight() + SY(4), y0 = SY(14);
+        s.fillRoundRect(SCR_W - w - SX(2), y0, w, h, SY(3), C_ERR);
+        s.setTextColor(C_TEXT);
+        s.drawString(b, SCR_W - SX(2) - w / 2, y0 + h / 2);
     }
 
     if (v.message) {
@@ -403,50 +471,53 @@ void Renderer::draw_waterfall(const UiView &v) {
 }
 
 /* -------------------------------------------------------------- readouts */
-static const char *reason_text(const an_meas_t &m, char *buf, size_t n) {
-    if (m.reason == AN_LOW_SNR) snprintf(buf, n, "SNR %.0f low", m.snr_db);
-    else snprintf(buf, n, "no signal");
-    return buf;
+/* WEAK: a peak 6 dB or more above the floor, short of the threshold */
+static const char *absent_text(const an_meas_t &m) {
+    return m.reason == AN_LOW_SNR && m.snr_db >= FPV_SNR_MIN_DB ? "WEAK" : "NO SIGNAL";
 }
 
+/* One card per channel: the deviation is the point, large and in its colour
+ * on a panel tinted the same way; the measured centre underneath. */
 void Renderer::readout_box(const UiView &v, const UiChannel &c, int x, int w) {
     LGFX_Sprite &s = ro_;
     char b[32];
-    s.fillRoundRect(x + 1, 1, w - 2, RO_H - 2, 3, C_PANEL);
-    s.drawRoundRect(x + 1, 1, w - 2, RO_H - 2, 3, ch_full(c.color));
-    s.setFont(F_S);
+    bool live = c.m.present && c.smoothed == c.smoothed;
+    float off = live ? c.smoothed - (float)c.nominal_mhz : __builtin_nanf("");
+    s.fillRoundRect(x + 1, 1, w - 2, RO_H - 2, SY(4), panel_colour(off));
+    s.drawRoundRect(x + 1, 1, w - 2, RO_H - 2, SY(4), ch_full(c.color));
+    s.drawRoundRect(x + 2, 2, w - 4, RO_H - 4, SY(3), ch_full(c.color));
+
+    s.setFont(F_M);
     s.setTextDatum(textdatum_t::top_left);
     s.setTextColor(ch_full(c.color));
-    s.drawString(c.name, x + SX(5), SY(4));
+    s.drawString(c.name, x + SX(5), SY(3));
+    s.setFont(F_S);
+    s.setTextDatum(textdatum_t::top_right);
     s.setTextColor(C_AXIS);
     snprintf(b, sizeof(b), "%d", c.nominal_mhz);
-    s.drawString(b, x + SX(5) + s.textWidth(c.name) + SX(4), SY(4));
+    s.drawString(b, x + w - SX(5), SY(5));
 
-    bool live = c.m.present;
-    s.setFont(F_M);
-    s.setTextDatum(textdatum_t::top_center);
-    s.setTextColor(live ? C_TEXT : C_DIM);
-    if (c.smoothed == c.smoothed) snprintf(b, sizeof(b), "%.2f", c.smoothed);
-    else snprintf(b, sizeof(b), "----.--");
-    s.drawString(b, x + w / 2, SY(13));
-
-    float off = live ? c.smoothed - (float)c.nominal_mhz : __builtin_nanf("");
-    s.setTextColor(dev_colour(off));
-    if (off == off) snprintf(b, sizeof(b), "%+.2f", off);
-    else snprintf(b, sizeof(b), "--");
-    s.drawString(b, x + w / 2, SY(29));
-
-    s.setFont(F_S);
-    s.setTextColor(live ? C_AXIS : C_DIM);
     if (live) {
-        if (c.m.bw3_mhz == c.m.bw3_mhz) snprintf(b, sizeof(b), "%.0fdB bw%.1f", c.m.peak_db, c.m.bw3_mhz);
-        else snprintf(b, sizeof(b), "%.0fdB", c.m.peak_db);
+        s.setFont(F_L);
+        s.setTextDatum(textdatum_t::middle_center);
+        s.setTextColor(dev_colour(off));
+        snprintf(b, sizeof(b), "%+.2f", off);
+        s.drawString(b, x + w / 2, RO_H / 2 + SY(2));
+        s.setFont(F_S);
+        s.setTextDatum(textdatum_t::bottom_center);
+        s.setTextColor(C_AXIS);
+        snprintf(b, sizeof(b), "%.2f MHz", c.smoothed);
+        s.drawString(b, x + w / 2, RO_H - SY(5));
     } else {
-        reason_text(c.m, b, sizeof(b));
+        s.setFont(F_M);
+        s.setTextDatum(textdatum_t::middle_center);
+        s.setTextColor(C_DIM);
+        s.drawString(absent_text(c.m), x + w / 2, RO_H / 2 + SY(4));
     }
-    s.drawString(b, x + w / 2, SY(48));
 }
 
+/* 1CH: < > step the channel; the middle shows the deviation large, the
+ * measurement on the right, and a tap there goes back to the 4CH / 3CH list. */
 void Renderer::readout_single(const UiView &v, const UiChannel &c) {
     LGFX_Sprite &s = ro_;
     char b[48];
@@ -459,67 +530,61 @@ void Renderer::readout_single(const UiView &v, const UiChannel &c) {
     s.fillTriangle(SCR_W - ARROW_W / 2 - ta, RO_H / 2 - th, SCR_W - ARROW_W / 2 - ta, RO_H / 2 + th,
                    SCR_W - ARROW_W / 2 + tb, RO_H / 2, C_TEXT);
 
-    s.fillRoundRect(x0, 1, x1 - x0, RO_H - 2, 3, C_PANEL);
-    s.drawRoundRect(x0, 1, x1 - x0, RO_H - 2, 3, ch_full(c.color));
+    bool live = c.m.present && c.smoothed == c.smoothed;
+    float off = live ? c.smoothed - (float)c.nominal_mhz : __builtin_nanf("");
+    s.fillRoundRect(x0, 1, x1 - x0, RO_H - 2, SY(4), panel_colour(off));
+    s.drawRoundRect(x0, 1, x1 - x0, RO_H - 2, SY(4), ch_full(c.color));
+    s.drawRoundRect(x0 + 1, 2, x1 - x0 - 2, RO_H - 4, SY(3), ch_full(c.color));
 
-    bool live = c.m.present;
     /* name and nominal */
     s.setFont(F_M);
     s.setTextDatum(textdatum_t::top_left);
     s.setTextColor(ch_full(c.color));
     s.drawString(c.name, x0 + SX(5), SY(3));
+    int wn = s.textWidth(c.name);
     s.setFont(F_S);
     s.setTextColor(C_AXIS);
     snprintf(b, sizeof(b), "%d MHz", c.nominal_mhz);
-    s.drawString(b, x0 + SX(30), SY(7));
+    s.drawString(b, x0 + SX(9) + wn, SY(5));
 
-    /* measured centre, large */
-    s.setFont(F_XL);
-    s.setTextColor(live ? C_TEXT : C_DIM);
-    if (c.smoothed == c.smoothed) snprintf(b, sizeof(b), "%.2f", c.smoothed);
-    else snprintf(b, sizeof(b), "----.--");
-    s.drawString(b, x0 + SX(5), SY(20));
-    int wv = s.textWidth(b), hv = s.fontHeight();
-    s.setFont(F_S);
-    s.drawString("MHz", x0 + SX(8) + wv, SY(20) + hv - s.fontHeight() - SY(2));
-
-    /* deviation, top right */
-    float off = live ? c.smoothed - (float)c.nominal_mhz : __builtin_nanf("");
-    s.setFont(F_M);
-    s.setTextDatum(textdatum_t::top_right);
-    s.setTextColor(dev_colour(off));
-    if (off == off) snprintf(b, sizeof(b), "%+.2f MHz", off);
-    else snprintf(b, sizeof(b), "-- MHz");
-    s.drawString(b, x1 - SX(5), SY(3));
-
-    /* details */
-    s.setFont(F_S);
-    s.setTextDatum(textdatum_t::top_left);
-    const int xd = x1 - SX(88);
-    s.setTextColor(live ? C_AXIS : C_DIM);
-    if (c.m.peak_db == c.m.peak_db) snprintf(b, sizeof(b), "peak %6.1f dB", c.m.peak_db);
-    else snprintf(b, sizeof(b), "peak     -- dB");
-    s.drawString(b, xd, SY(22));
-    if (c.m.snr_db == c.m.snr_db) snprintf(b, sizeof(b), "SNR  %6.1f dB", c.m.snr_db);
-    else snprintf(b, sizeof(b), "SNR      -- dB");
-    s.drawString(b, xd, SY(32));
-    if (v.floor_db == v.floor_db) snprintf(b, sizeof(b), "floor%6.1f dB", v.floor_db);
-    else snprintf(b, sizeof(b), "floor    -- dB");
-    s.drawString(b, xd, SY(42));
-
+    /* deviation, large */
     if (live) {
-        char b3[12], b20[12];
-        if (c.m.bw3_mhz == c.m.bw3_mhz) snprintf(b3, sizeof(b3), "%.2f", c.m.bw3_mhz);
-        else snprintf(b3, sizeof(b3), "--");
-        if (c.m.bw20_mhz == c.m.bw20_mhz) snprintf(b20, sizeof(b20), "%.2f", c.m.bw20_mhz);
-        else snprintf(b20, sizeof(b20), "--");
-        snprintf(b, sizeof(b), "-3dB %s  -20dB %s MHz", b3, b20);
-        s.setTextColor(C_AXIS);
+        s.setFont(F_XL);
+        s.setTextColor(dev_colour(off));
+        snprintf(b, sizeof(b), "%+.2f", off);
+        s.drawString(b, x0 + SX(5), SY(20));
+        int wv = s.textWidth(b), hv = s.fontHeight();
+        s.setFont(F_S);
+        s.drawString("MHz", x0 + SX(8) + wv, SY(20) + hv - s.fontHeight() - SY(2));
     } else {
-        reason_text(c.m, b, sizeof(b));
+        s.setFont(F_L);
         s.setTextColor(C_DIM);
+        s.drawString(absent_text(c.m), x0 + SX(5), SY(26));
     }
-    s.drawString(b, x0 + SX(5), SY(50));
+
+    /* measurement, right column */
+    const int xd = x1 - SX(96);
+    s.setFont(F_M);
+    s.setTextDatum(textdatum_t::top_left);
+    s.setTextColor(live ? C_TEXT : C_DIM);
+    if (live) snprintf(b, sizeof(b), "%.2f", c.smoothed);
+    else snprintf(b, sizeof(b), "----.--");
+    s.drawString(b, xd, SY(3));
+    s.setFont(F_S);
+    s.setTextColor(C_AXIS);
+    if (c.m.snr_db == c.m.snr_db) snprintf(b, sizeof(b), "SNR %.0f  peak %.0f", c.m.snr_db, c.m.peak_db);
+    else snprintf(b, sizeof(b), "SNR --");
+    s.drawString(b, xd, SY(22));
+    if (live && c.m.bw3_mhz == c.m.bw3_mhz && c.m.bw20_mhz == c.m.bw20_mhz)
+        snprintf(b, sizeof(b), "bw %.1f / %.1f MHz", c.m.bw3_mhz, c.m.bw20_mhz);
+    else if (live && c.m.bw3_mhz == c.m.bw3_mhz)
+        snprintf(b, sizeof(b), "bw %.1f MHz", c.m.bw3_mhz);
+    else
+        snprintf(b, sizeof(b), "bw --");
+    s.drawString(b, xd, SY(33));
+    s.setTextColor(C_DIM);
+    snprintf(b, sizeof(b), "tap: back to %s", mode_label(v.back_mode));
+    s.drawString(b, xd, SY(48));
 }
 
 void Renderer::draw_readouts(const UiView &v) {
@@ -534,14 +599,14 @@ void Renderer::draw_readouts(const UiView &v) {
     s.pushSprite(dst_, 0, RO_Y);
 }
 
-/* ------------------------------------------------------------------ setup */
+/* ------------------------------------------------------------------ pages */
 static uint16_t rgb(uint32_t c) { return lgfx::color565((c >> 16) & 255, (c >> 8) & 255, c & 255); }
 
 void Renderer::draw_setup(const SetupView &sv) {
     lgfx::LovyanGFX &d = *dst_;
     const uint16_t bg = rgb(UI_RGB[C_BG]), btn = rgb(UI_RGB[C_BTN]), on = rgb(UI_RGB[C_BTN_ON]);
-    const uint16_t text = rgb(UI_RGB[C_TEXT]), dim = rgb(UI_RGB[C_DIM]), axis = rgb(UI_RGB[C_AXIS]);
-    char b[32];
+    const uint16_t text = rgb(UI_RGB[C_TEXT]), axis = rgb(UI_RGB[C_AXIS]), err = rgb(UI_RGB[C_ERR]);
+    char b[64];
     d.startWrite();
     d.fillScreen(bg);
 
@@ -558,20 +623,18 @@ void Renderer::draw_setup(const SetupView &sv) {
         d.setTextColor(axis);
         d.drawString(t, SX(4), SU_ROW_Y + row * SU_ROW_PITCH + SU_ROW_H / 2);
     };
-    auto stepper = [&](int row, const char *value, const char *unit, bool active) {
+    auto stepper = [&](int row, const char *value, const char *hint, uint16_t hint_col) {
         int y0 = SU_ROW_Y + row * SU_ROW_PITCH, y1 = y0 + SU_ROW_H;
         box(SU_COL0, y0, SU_COL0 + SU_STEP_W, y1, "-", false, F_L);
         box(SCR_W - SU_STEP_W, y0, SCR_W - 1, y1, "+", false, F_L);
         int cx = (SU_COL0 + SU_STEP_W + SCR_W - SU_STEP_W) / 2;
         d.setFont(F_L);
         d.setTextDatum(textdatum_t::middle_center);
-        d.setTextColor(active ? text : dim);
-        d.drawString(value, cx, (y0 + y1) / 2 - (unit ? SY(6) : 0));
-        if (unit) {
-            d.setFont(F_S);
-            d.setTextColor(axis);
-            d.drawString(unit, cx, y1 - SY(6));
-        }
+        d.setTextColor(text);
+        d.drawString(value, cx, (y0 + y1) / 2 - SY(6));
+        d.setFont(F_S);
+        d.setTextColor(hint_col);
+        d.drawString(hint, cx, y1 - SY(6));
     };
 
     /* title row */
@@ -579,31 +642,267 @@ void Renderer::draw_setup(const SetupView &sv) {
     d.setTextDatum(textdatum_t::middle_left);
     d.setTextColor(text);
     d.drawString("SETUP", SX(6), SU_TITLE_H / 2);
-    box(SU_CAL_X0, 2, SU_CAL_X1, SU_TITLE_H - 2, "TOUCH CAL", false, F_M);
     box(SU_DONE_X0, 2, SCR_W - 1, SU_TITLE_H - 2, "DONE", true, F_L);
 
-    /* MODE */
-    label(0, "MODE");
-    {
-        int y0 = SU_ROW_Y, y1 = y0 + SU_ROW_H, w = (SCR_W - SU_COL0) / 3;
-        static const Mode M[3] = {MODE_4CH, MODE_3CH, MODE_1CH};
-        for (int i = 0; i < 3; i++)
-            box(SU_COL0 + i * w + 1, y0, SU_COL0 + (i + 1) * w - 2, y1, mode_label(M[i]), sv.mode == M[i],
-                F_L);
-    }
-    /* CH (1CH) */
-    label(1, "1CH");
-    snprintf(b, sizeof(b), "%s %d", sv.single_name, sv.single_mhz);
-    stepper(1, b, sv.mode == MODE_1CH ? nullptr : "1CH mode only", sv.mode == MODE_1CH);
     /* GAIN */
-    label(2, "GAIN");
-    if (sv.gain < 0) snprintf(b, sizeof(b), "AGC");
+    label(0, "GAIN");
+    if (sv.gain < 0) snprintf(b, sizeof(b), "AUTO");
     else snprintf(b, sizeof(b), "%d", sv.gain);
-    stepper(2, b, "table idx, 55+ sat.", true);
-    /* SNR threshold */
-    label(3, "SNR");
+    if (sv.clip_permille >= FPV_SAT_PERMILLE) {
+        char h[32];
+        snprintf(h, sizeof(h), "SAT %d%% - lower it", (sv.clip_permille + 5) / 10);
+        stepper(0, b, h, err);
+    } else {
+        stepper(0, b, "higher = weaker VTX seen", axis);
+    }
+    /* detection threshold */
+    label(1, "DETECT");
     snprintf(b, sizeof(b), "%d dB", sv.snr_db);
-    stepper(3, b, "peak above floor", true);
+    stepper(1, b, "signal above noise", axis);
+    /* INFO */
+    label(2, "INFO");
+    {
+        int y0 = SU_ROW_Y + 2 * SU_ROW_PITCH;
+        d.setFont(F_S);
+        d.setTextDatum(textdatum_t::top_left);
+        d.setTextColor(text);
+        if (sv.floor_db == sv.floor_db)
+            snprintf(b, sizeof(b), "%.1f sweeps/s   noise %.0f dB", sv.sweeps_per_s, sv.floor_db);
+        else
+            snprintf(b, sizeof(b), "waiting for the first sweep");
+        d.drawString(b, SU_COL0, y0 + SY(8));
+        if (sv.bat_mv == 0) snprintf(b, sizeof(b), "battery --");
+        else if (sv.bat_mv < FPV_BAT_ABSENT_MV) snprintf(b, sizeof(b), "USB power");
+        else snprintf(b, sizeof(b), "battery %d.%02d V", sv.bat_mv / 1000, (sv.bat_mv % 1000) / 10);
+        if (sv.rx_errors) {
+            size_t n = strlen(b);
+            snprintf(b + n, sizeof(b) - n, "   RX errors %u", sv.rx_errors);
+        }
+        d.drawString(b, SU_COL0, y0 + SY(24));
+    }
+    /* TOUCH */
+    label(3, "TOUCH");
+    {
+        int y0 = SU_ROW_Y + 3 * SU_ROW_PITCH;
+        box(SU_COL0, y0, SU_CAL_X1, y0 + SU_ROW_H, "CALIBRATE", false, F_M);
+    }
+    d.endWrite();
+}
+
+/* title row of the mode list and the channel grid */
+static void page_title(lgfx::LovyanGFX &d, const char *title) {
+    d.fillScreen(rgb(UI_RGB[C_BG]));
+    d.setFont(F_L);
+    d.setTextDatum(textdatum_t::middle_left);
+    d.setTextColor(rgb(UI_RGB[C_TEXT]));
+    d.drawString(title, SX(6), PG_TITLE_H / 2);
+    d.fillRoundRect(PG_CLOSE_X0, 2, SCR_W - 1 - PG_CLOSE_X0, PG_TITLE_H - 4, 5, rgb(UI_RGB[C_BTN]));
+    d.setFont(F_M);
+    d.setTextDatum(textdatum_t::middle_center);
+    d.drawString("CLOSE", (PG_CLOSE_X0 + SCR_W - 1) / 2, PG_TITLE_H / 2);
+}
+
+/* the second title button, left of CLOSE */
+static void page_button(lgfx::LovyanGFX &d, const char *text) {
+    d.fillRoundRect(PG_BTN2_X0, 2, PG_BTN2_X1 - PG_BTN2_X0, PG_TITLE_H - 4, 5, rgb(UI_RGB[C_BTN]));
+    d.setFont(F_M);
+    d.setTextDatum(textdatum_t::middle_center);
+    d.setTextColor(rgb(UI_RGB[C_TEXT]));
+    d.drawString(text, (PG_BTN2_X0 + PG_BTN2_X1) / 2, PG_TITLE_H / 2);
+}
+
+void Renderer::draw_modes(const ModesView &mv) {
+    lgfx::LovyanGFX &d = *dst_;
+    const uint16_t btn = rgb(UI_RGB[C_BTN]), on = rgb(UI_RGB[C_BTN_ON]), axis = rgb(UI_RGB[C_AXIS]);
+    const uint16_t text = rgb(UI_RGB[C_TEXT]), bg = rgb(UI_RGB[C_BG]);
+    char b[16];
+    d.startWrite();
+    page_title(d, "MODE");
+    const int ch_x0 = SX(58), ch_w = (MODE_WIFI_X0 - SX(4) - ch_x0) / MAX_CH;
+    for (int r = 0; r < GROUP_COUNT; r++) {
+        const GroupInfo &row = mv.row[r];
+        int y0 = PG_TITLE_H + r * MODE_ROW_H + 1, y1 = y0 + MODE_ROW_H - 3;
+        bool sel = row.mode == mv.current;
+        d.fillRoundRect(0, y0, MODE_WIFI_X0 - SX(4), y1 - y0, 5, btn);
+        if (sel) {
+            d.drawRoundRect(0, y0, MODE_WIFI_X0 - SX(4), y1 - y0, 5, on);
+            d.drawRoundRect(1, y0 + 1, MODE_WIFI_X0 - SX(4) - 2, y1 - y0 - 2, 4, on);
+        }
+        d.setFont(F_M);
+        d.setTextDatum(textdatum_t::middle_left);
+        d.setTextColor(sel ? on : axis);
+        d.drawString(mode_label(row.mode), SX(6), (y0 + y1) / 2);
+        for (int i = 0; i < row.n; i++) {
+            int cx = ch_x0 + i * ch_w + ch_w / 2;
+            d.setFont(F_L);
+            d.setTextDatum(textdatum_t::bottom_center);
+            d.setTextColor(rgb(CH_RGB[row.color[i]]));
+            d.drawString(row.name[i], cx, (y0 + y1) / 2 + SY(5));
+            d.setFont(F_S);
+            d.setTextDatum(textdatum_t::top_center);
+            d.setTextColor(axis);
+            snprintf(b, sizeof(b), "%d", row.mhz[i]);
+            d.drawString(b, cx, (y0 + y1) / 2 + SY(6));
+        }
+        /* this group's Wi-Fi check */
+        d.fillRoundRect(MODE_WIFI_X0, y0, SCR_W - MODE_WIFI_X0, y1 - y0, 5, text);
+        d.setFont(F_M);
+        d.setTextDatum(textdatum_t::middle_center);
+        d.setTextColor(bg);
+        d.drawString("WiFi", (MODE_WIFI_X0 + SCR_W) / 2, (y0 + y1) / 2);
+    }
+    d.endWrite();
+}
+
+/* ------------------------------------------------------------- Wi-Fi page */
+constexpr float WMAP_LO = 5490.0f, WMAP_HI = 5900.0f;
+constexpr int WMAP_X0 = SX(4), WMAP_X1 = SCR_W - SX(4);
+
+static int wmap_x(float mhz) { return WMAP_X0 + (int)((mhz - WMAP_LO) / (WMAP_HI - WMAP_LO) * (WMAP_X1 - WMAP_X0)); }
+static int wifi_mhz(int ch) { return ch <= 14 ? 2407 + 5 * ch : 5000 + 5 * ch; }
+
+/* How strongly a Wi-Fi signal shows: 1 at FPV_WIFI_RSSI_STRONG and above,
+ * down to floor_a at FPV_WIFI_RSSI_WEAK and below. */
+static float wifi_alpha(int rssi, float floor_a) {
+    float a = (float)(rssi - FPV_WIFI_RSSI_WEAK) / (FPV_WIFI_RSSI_STRONG - FPV_WIFI_RSSI_WEAK);
+    if (a > 1) a = 1;
+    return floor_a + (1 - floor_a) * (a < 0 ? 0 : a);
+}
+
+/* The strongest access point whose signal covers a Wi-Fi channel. */
+static const WifiApInfo *ap_on(const WifiView &w, int ch) {
+    const WifiApInfo *best = nullptr;
+    int f = wifi_mhz(ch);
+    for (int i = 0; i < w.nap; i++) {
+        const WifiApInfo &a = w.ap[i];
+        if (f > a.lo_mhz && f < a.hi_mhz && (!best || a.rssi > best->rssi)) best = &a;
+    }
+    return best;
+}
+
+void Renderer::draw_wifi(const WifiView &w) {
+    lgfx::LovyanGFX &d = *dst_;
+    const GroupInfo &g = w.group;
+    const uint16_t bg = rgb(UI_RGB[C_BG]), btn = rgb(UI_RGB[C_BTN]), text = rgb(UI_RGB[C_TEXT]);
+    const uint16_t axis = rgb(UI_RGB[C_AXIS]), dim = rgb(UI_RGB[C_DIM]), grid = rgb(UI_RGB[C_GRID]);
+    const uint32_t RED = 0xff3b30, YELLOW = UI_RGB[C_DEV_WARN];
+    const uint16_t green = rgb(0x45d97a);
+    char b[64];
+    d.startWrite();
+    page_title(d, mode_label(g.mode));
+    page_button(d, w.running ? "STOP" : "SCAN");
+    d.setFont(F_S);
+    d.setTextDatum(textdatum_t::middle_left);
+    d.setTextColor(text);
+    d.drawString("WiFi check", SX(62), PG_TITLE_H / 2 - SY(6));
+    d.setTextColor(axis);
+    if (w.running && w.current >= 0) snprintf(b, sizeof(b), "ch %d  %d/%d", w.chan[w.current].ch, w.done + 1, w.nch);
+    else if (w.nch) snprintf(b, sizeof(b), "%d ch %s", w.nch, w.done == w.nch ? "checked" : "stopped");
+    else snprintf(b, sizeof(b), "nothing to check");
+    d.drawString(b, SX(62), PG_TITLE_H / 2 + SY(6));
+
+    /* map: the group's channels (17 MHz each), then the Wi-Fi channels checked */
+    const int y_grp = PG_TITLE_H + SY(2), grp_h = SY(22);
+    const int y_wifi = y_grp + grp_h + SY(2), wifi_h = SY(14);
+    const int y_axis = y_wifi + wifi_h + SY(1);
+    for (int k = 0; k < g.n; k++) {
+        uint32_t c = CH_RGB[g.color[k]];
+        int x0 = wmap_x(g.mhz[k] - FPV_BW_MARK_OUTER_MHZ / 2), x1 = wmap_x(g.mhz[k] + FPV_BW_MARK_OUTER_MHZ / 2);
+        d.fillRect(x0, y_grp + SY(10), x1 - x0 + 1, grp_h - SY(10), rgb(blend(c, UI_RGB[C_BG], 0.35f)));
+        d.drawFastVLine(wmap_x((float)g.mhz[k]), y_grp + SY(10), grp_h - SY(10), rgb(c));
+        d.setFont(F_S);
+        d.setTextDatum(textdatum_t::top_center);
+        d.setTextColor(rgb(c));
+        d.drawString(g.name[k], wmap_x((float)g.mhz[k]), y_grp);
+    }
+    d.setTextDatum(textdatum_t::middle_center);
+    for (int i = 0; i < w.nch; i++) {
+        const WifiChanInfo &c = w.chan[i];
+        int f = wifi_mhz(c.ch), x0 = wmap_x(f - 10.0f) + 1, x1 = wmap_x(f + 10.0f) - 1;
+        bool scanned = i < w.done;
+        /* heard: red (Direct) / yellow (IMD), fainter the weaker it is */
+        float a = scanned && c.frames ? wifi_alpha(c.rssi_max, 0.25f) : 0;
+        uint16_t fill = !scanned ? bg : !c.frames ? btn : rgb(blend(c.direct ? RED : YELLOW, UI_RGB[C_BG], a));
+        d.fillRect(x0, y_wifi, x1 - x0 + 1, wifi_h, fill);
+        d.drawRect(x0, y_wifi, x1 - x0 + 1, wifi_h, (w.running && i == w.current) ? text : grid);
+        snprintf(b, sizeof(b), "%d", c.ch);
+        d.setTextColor(scanned && c.frames && a > 0.6f ? bg : axis);
+        if (d.textWidth(b) <= x1 - x0) d.drawString(b, (x0 + x1) / 2, y_wifi + wifi_h / 2);
+    }
+    d.setTextDatum(textdatum_t::top_center);
+    d.setTextColor(axis);
+    for (int f = 5500; f <= 5900; f += 50) {
+        int x = wmap_x((float)f);
+        d.drawFastVLine(x, y_axis, SY(2), axis);
+        snprintf(b, sizeof(b), "%d", f);
+        int tw = d.textWidth(b);
+        if (x - tw / 2 >= 0 && x + tw / 2 < SCR_W) d.drawString(b, x, y_axis + SY(2));
+    }
+
+    /* one row per FPV channel: OK, Direct (a Wi-Fi signal on it) or IMD */
+    const int y_rows = y_axis + SY(13);
+    const int row_h = g.n ? (SCR_H - y_rows) / g.n : 0;
+    for (int k = 0; k < g.n; k++) {
+        int y0 = y_rows + k * row_h;
+        /* causes heard: the strongest Direct, else the strongest IMD */
+        int best = -1, count = 0;
+        bool best_direct = false;
+        for (int i = 0; i < w.done; i++) {
+            const WifiChanInfo &c = w.chan[i];
+            if (!c.frames) continue;
+            bool dir = c.direct & (1u << k);
+            if (!dir && !c.imd[k]) continue;
+            count++;
+            if (best < 0 || (dir && !best_direct) ||
+                (dir == best_direct && c.rssi_max > w.chan[best].rssi_max)) {
+                best = i;
+                best_direct = dir;
+            }
+        }
+        d.drawFastHLine(0, y0, SCR_W, grid);
+        d.setFont(F_L);
+        d.setTextDatum(textdatum_t::middle_left);
+        d.setTextColor(rgb(CH_RGB[g.color[k]]));
+        d.drawString(g.name[k], SX(4), y0 + row_h / 2);
+        d.setFont(F_S);
+        d.setTextColor(axis);
+        snprintf(b, sizeof(b), "%d", g.mhz[k]);
+        d.drawString(b, SX(36), y0 + row_h / 2);
+
+        const int xs = SX(70), xd = SX(132);
+        d.setFont(F_M);
+        if (best < 0) {
+            bool all = w.done == w.nch;
+            d.setTextColor(all ? green : dim);
+            d.drawString(all ? "OK" : "...", xs, y0 + row_h / 2);
+            continue;
+        }
+        const WifiChanInfo &c = w.chan[best];
+        d.setTextColor(rgb(blend(best_direct ? RED : YELLOW, UI_RGB[C_BG], wifi_alpha(c.rssi_max, 0.4f))));
+        d.drawString(best_direct ? "Direct" : "IMD", xs, y0 + row_h / 2);
+        /* ch, how, dBm, which AP */
+        d.setFont(F_S);
+        d.setTextDatum(textdatum_t::bottom_left);
+        d.setTextColor(text);
+        if (best_direct) {
+            snprintf(b, sizeof(b), "ch%d %d  %d dBm", c.ch, wifi_mhz(c.ch), c.rssi_max);
+        } else {
+            int v = c.imd[k] > 0 ? c.imd[k] - 1 : -c.imd[k] - 1;
+            if (c.imd[k] > 0) snprintf(b, sizeof(b), "ch%d  2x%s-WiFi  %d dBm", c.ch, g.name[v], c.rssi_max);
+            else snprintf(b, sizeof(b), "ch%d  2xWiFi-%s  %d dBm", c.ch, g.name[v], c.rssi_max);
+        }
+        d.drawString(b, xd, y0 + row_h / 2);
+        const WifiApInfo *a = ap_on(w, c.ch);
+        d.setTextDatum(textdatum_t::top_left);
+        d.setTextColor(axis);
+        if (a) snprintf(b, sizeof(b), "%.18s", a->ssid[0] ? a->ssid : "(hidden)");
+        else snprintf(b, sizeof(b), "(no beacon heard)");
+        if (count > 1) {
+            size_t l = strlen(b);
+            snprintf(b + l, sizeof(b) - l, "  +%d more", count - 1);
+        }
+        d.drawString(b, xd, y0 + row_h / 2 + SY(1));
+    }
     d.endWrite();
 }
 

@@ -51,10 +51,12 @@
 
 ## 決まった仕様（ユーザーの指定）
 
-- モード：4CH = E2 E1 F3 F5、3CH = **E1 F1 F4**、1CH = ±15 MHz。1CH の ◀▶ は **E2→E1→F1→F3→F4→F5** だけ。
+- モード：4CH = E2 E1 F3 F5、4CH2 = **E1 A8 A5 F5**、4CH3 = **R2 F1 R4 R5**（2026-10-14 追加）、3CH = **E1 F1 F4**、1CH = ±15 MHz。**1CH はグループに属する**（2026-10-14 ユーザー指定）：カードで入り、◀▶ はグループ内、中央でグループに戻る、色はグループでの色。Settings.mode はグループ、single は index | 0x80（1CH 表示中）。NVS "set3"（旧 "set2"/"set" はグループに変換、1CH は 4CH に）。
+- 色：3CH・4CH（と PC の複数ch）は周波数の低い順に 赤・緑・青・黄（2026-10-14 ユーザー指定）。1CH は従来の固定色。
+- Wi-Fi（2026-10-14）：`FPV WIFI <ch> [ms]` と、モード一覧の**グループごとの WiFi ボタン**。ch100〜177 のうちそのグループに Direct / IMD（2×VTX−WiFi、2×WiFi−VTX、17 MHz 判定）になる ch だけを事前計算して 1.2 s ずつ聞き、FPV チャンネルごとに OK / Direct / IMD を出す（画面の文言は英語：ユーザー指定）。ESP-SDR が NULL モード＋promiscuous で Wi-Fi を起動しているのを使い、`sdr_hw_wifi_listen` で AGC にして `esp_wifi_set_channel` → コールバックで集計 → `rx_ready=false` で SDR に戻す（DC は dc_generation で自動再測定）。**送信しない**（scan_start・80211_tx は使わない。ユーザーが気にした点）。占有幅はビーコンの HT/VHT operation IE から。バッファは heap（.bss 余裕 約 2.8 KB）。書き込みの merged bin は NVS も上書きするので設定が初期化される。
 - 帯域マークは **9 MHz と 17 MHz**。
 - 測定は **直近 10 掃引の単純平均**（10 掃引分をメモリに保存、Q58 の整数累積で正確）。
-- モード切替と 1CH 送りはメイン画面からも、セットアップ画面からも（ゲイン・SNR 閾値・タッチ校正もセットアップ）。
+- UI（2026-10-14 整理）：モードは左上のチャンネル表示 → モード一覧、1CH はチャンネル表（A E F R）／カードを押してズーム／1CH 中央で戻る。カードはずれが主役（地の色もずれの色）。セットアップは GAIN・DETECT・INFO・TOUCH のみ。飽和は受信側で ADC のレール（±510）を数え、1 % 以上で SAT 表示（STATE の clip=千分率）。
 - 電池：3.30 V 未満が 3 回でディープスリープ、起動は 3.40 V 以上、休止中は 60 秒ごとに測って 3.70 V で復帰。
 - USB：`FPV` で始まる行が独自プロトコル（`main/fpv/link.h`）、それ以外は ESP-SDR の I/Q コマンド（5 秒のリース）。PC 版は **auto（FPV? に答えれば fft、だめなら iq）/ iq / fft** をボタンで選べる。`FPV NOLCD` で液晶を消して掃引だけ（STREAM OFF・送信失敗・FPV LCD・タップで復帰）。
 - 3.5" 版のピンは下駄基板（片面・交差なし）に合わせて 2.8" 版と変えてある（`fpv_config.h` の `FPV_PANEL_RESTOUCH35` 側）。
@@ -65,7 +67,8 @@
 - ResTouch の電源を電池（BAT+→VSYS）で取ったときの安定性とスリープ電流。必要なら VSYS のロードスイッチ。
 - 下駄基板：Pico の寸法（列間 17.78 mm、1 番ピン端から 1.37 mm）と XIAO ピン配置は標準値からの作図。実物合わせ未確認。ResTouch 上の Pico の向き（USB 側が基板の外か）も未確認。
 - 掃引速度：実測（2026-10-09、3.5"、PC の 4CH 相当 9 ホップ）は DC キャッシュ前 1.34 / NOLCD 2.47、**後 2.96 / NOLCD 6.3 sweeps/s**。液晶ありは描画（約 0.18 s/掃引）が次の律速。
-- 3.5" ResTouch の表示・タッチ・ゲイン 25 は実機で動作（2026-10-10、2 台目の XIAO）。書き込み後に RTS リセットで抜けないときは watchdog リセットか RESET ボタン。
+- 3.5" ResTouch の表示・タッチ・ゲイン 25 は実機で動作（2026-10-10、2 台目の XIAO）。
+- 3.5" 静電容量式（`FPV_PANEL=CAPTOUCH35`、ST7796S + FT6336U）はジャンパ線で実機動作（2026-10-14、XIAO MAC 10:BD:A3:CF:81:00）。ケーブルの並びは `fpv_config.h` のコメントどおり（タッチは INT / RST 表記）。結線図は `hardware/xiao_captouch35_board/wiring_captouch35.html`。基板（`xiao_captouch35_board`）は未発注。書き込み後に RTS リセットで抜けないときは watchdog リセットか RESET ボタン。
 - 5833 MHz 以上の LO ではホップ端（±23〜27 MHz）が −2〜−4 dB 落ち、min 合成で LO 位置（5807, 5833, 5858 など）に谷が出る。upstream の C5 帯域は全幅約 48 MHz（±24）。対策案：近い方のホップを使い 6 dB 以上高いときだけ min（未実装）。
 - 消費電流（見積もり：2.8" 150〜190 mA、3.5" 220〜280 mA、NOLCD 約 100 mA、スリープ 30〜100 µA）。
 - さらに速くするなら FFT の radix-4 化が次の候補。

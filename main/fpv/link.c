@@ -60,7 +60,25 @@ fpv_cmd_kind_t fpv_parse(const char *line, const char *const *single, int nsingl
     if (!strcmp(w, "STATE?")) return c->kind = FC_STATE;
     if (!strcmp(w, "NOLCD")) return c->kind = FC_NOLCD;
     if (!strcmp(w, "LCD")) return c->kind = FC_LCD;
+    if (!strcmp(w, "TOUCH?")) return c->kind = FC_TOUCHLOG;
     p = word(p, a, sizeof(a));
+    if (!strcmp(w, "WIFICHECK")) {
+        if (!strcmp(a, "4CH")) c->ival = 0;           /* values of ui.hpp's Mode */
+        else if (!strcmp(a, "3CH")) c->ival = 1;
+        else if (!strcmp(a, "4CH2")) c->ival = 3;
+        else if (!strcmp(a, "4CH3")) c->ival = 4;
+        else return bad(c, "WIFICHECK 4CH|4CH2|4CH3|3CH");
+        return c->kind = FC_WIFICHECK;
+    }
+    if (!strcmp(w, "WIFI")) {
+        char m[24];
+        word(p, m, sizeof(m));
+        c->ms = 2000;
+        if (!to_int(a, &c->ival) || !((c->ival >= 1 && c->ival <= 14) || (c->ival >= 36 && c->ival <= 177)) ||
+            (m[0] && (!to_int(m, &c->ms) || c->ms < 50 || c->ms > 10000)))
+            return bad(c, "WIFI <1..14|36..177> [50..10000 ms]");
+        return c->kind = FC_WIFI;
+    }
     if (!strcmp(w, "STREAM")) {
         if (!strcmp(a, "ON")) c->ival = 1;
         else if (!strcmp(a, "OFF")) c->ival = 0;
@@ -71,13 +89,15 @@ fpv_cmd_kind_t fpv_parse(const char *line, const char *const *single, int nsingl
         if (!strcmp(a, "4CH")) c->ival = 0;
         else if (!strcmp(a, "3CH")) c->ival = 1;
         else if (!strcmp(a, "1CH")) c->ival = 2;
-        else return bad(c, "MODE 4CH|3CH|1CH");
+        else if (!strcmp(a, "4CH2")) c->ival = 3;     /* values of ui.hpp's Mode */
+        else if (!strcmp(a, "4CH3")) c->ival = 4;
+        else return bad(c, "MODE 4CH|4CH2|4CH3|3CH|1CH");
         return c->kind = FC_MODE;
     }
     if (!strcmp(w, "CH")) {
         for (int i = 0; i < nsingle; i++)
             if (!strcmp(a, single[i])) { c->ival = i; return c->kind = FC_CH; }
-        return bad(c, "CH E2|E1|F1|F3|F4|F5");
+        return bad(c, "CH <a channel of the current group>");
     }
     if (!strcmp(w, "GAIN")) {
         if (!strcmp(a, "AGC")) c->ival = -1;
