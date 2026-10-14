@@ -109,6 +109,7 @@ D2/D3（GPIO25/7）はストラップピンなので使っていない。D6（GP
 画面の配置・操作は 2.8" 版と同じで、480×320 に合わせて拡大し、文字は DejaVu フォントになる。
 
 配線は下駄基板（`hardware/xiao_restouch35_adapter/`）に合わせてあり、**2.8" 版とはピンが違う**。
+結線図：[web/wiring/restouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/restouch35.html)（3.5" 静電容量式は [captouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)）。
 下駄基板は Pico と同じ外形・ピン位置（21×51 mm）に XIAO 用の延長（24 mm）を足したもので、基板の Pico 用ソケットにそのまま挿す。
 銅箔は片面（裏）だけで交差なし。信号のある Pico ピンにだけ穴がある。
 

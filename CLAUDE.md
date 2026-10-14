@@ -68,7 +68,7 @@
 - 下駄基板：Pico の寸法（列間 17.78 mm、1 番ピン端から 1.37 mm）と XIAO ピン配置は標準値からの作図。実物合わせ未確認。ResTouch 上の Pico の向き（USB 側が基板の外か）も未確認。
 - 掃引速度：実測（2026-10-09、3.5"、PC の 4CH 相当 9 ホップ）は DC キャッシュ前 1.34 / NOLCD 2.47、**後 2.96 / NOLCD 6.3 sweeps/s**。液晶ありは描画（約 0.18 s/掃引）が次の律速。
 - 3.5" ResTouch の表示・タッチ・ゲイン 25 は実機で動作（2026-10-10、2 台目の XIAO）。
-- 3.5" 静電容量式（`FPV_PANEL=CAPTOUCH35`、ST7796S + FT6336U）はジャンパ線で実機動作（2026-10-14、XIAO MAC 10:BD:A3:CF:81:00）。ケーブルの並びは `fpv_config.h` のコメントどおり（タッチは INT / RST 表記）。結線図は `hardware/xiao_captouch35_board/wiring_captouch35.html`。基板（`xiao_captouch35_board`）は未発注。書き込み後に RTS リセットで抜けないときは watchdog リセットか RESET ボタン。
+- 3.5" 静電容量式（`FPV_PANEL=CAPTOUCH35`、ST7796S + FT6336U）はジャンパ線で実機動作（2026-10-14、XIAO MAC 10:BD:A3:CF:81:00）。ケーブルの並びは `fpv_config.h` のコメントどおり（タッチは INT / RST 表記）。結線図は `web/wiring/captouch35.html`（ResTouch は `web/wiring/restouch35.html`、どちらも GitHub Pages で公開）。基板（`xiao_captouch35_board`）は未発注。書き込み後に RTS リセットで抜けないときは watchdog リセットか RESET ボタン。
 - 5833 MHz 以上の LO ではホップ端（±23〜27 MHz）が −2〜−4 dB 落ち、min 合成で LO 位置（5807, 5833, 5858 など）に谷が出る。upstream の C5 帯域は全幅約 48 MHz（±24）。対策案：近い方のホップを使い 6 dB 以上高いときだけ min（未実装）。
 - 消費電流（見積もり：2.8" 150〜190 mA、3.5" 220〜280 mA、NOLCD 約 100 mA、スリープ 30〜100 µA）。
 - さらに速くするなら FFT の radix-4 化が次の候補。
