@@ -1,0 +1,323 @@
+<title>XIAO C5 × 3.5インチ静電容量LCD 結線図</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one column; the drawing (XIAO in the middle, LCD cable labels on both sides) leads, the pin table and checks follow. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --fg: #1b2230;
+  --muted: #5d6676;
+  --line: #d6dbe3;
+  --board: #26324a;
+  --board-fg: #e8edf6;
+  --pad: #c9a227;
+  --nc: #9aa2ae;
+  --w-pwr: #c8382e;
+  --w-gnd: #4b5563;
+  --w-spi: #2a64c9;
+  --w-ctl: #b06d00;
+  --w-i2c: #10856a;
+  --warn-bg: #fff4e0;
+  --warn-fg: #7a4a00;
+  --font-body: "IBM Plex Sans JP", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Consolas", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --surface: #1a2029; --fg: #e4e8ef; --muted: #9aa3b2; --line: #2e3643;
+    --board: #2c3a56; --board-fg: #e8edf6; --pad: #e0bb45; --nc: #6b7380;
+    --w-pwr: #ff7468; --w-gnd: #a3adbb; --w-spi: #6ea4ff; --w-ctl: #f0b13a; --w-i2c: #43d1a2;
+    --warn-bg: #3a2c12; --warn-fg: #f5cf86;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a2029; --fg: #e4e8ef; --muted: #9aa3b2; --line: #2e3643;
+  --board: #2c3a56; --board-fg: #e8edf6; --pad: #e0bb45; --nc: #6b7380;
+  --w-pwr: #ff7468; --w-gnd: #a3adbb; --w-spi: #6ea4ff; --w-ctl: #f0b13a; --w-i2c: #43d1a2;
+  --warn-bg: #3a2c12; --warn-fg: #f5cf86;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.65; }
+.wrap { max-width: 920px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 48px; display: grid; gap: 28px; }
+header { display: grid; gap: 6px; }
+h1 { font-size: 1.6rem; line-height: 1.3; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.1rem; margin: 0 0 10px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0; max-width: 65ch; }
+.mono { font-family: var(--font-mono); }
+section { min-width: 0; }
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-x: auto; }
+.figure svg { display: block; width: 100%; min-width: 640px; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 22px; height: 4px; border-radius: 2px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.sig { font-family: var(--font-mono); font-weight: 600; }
+td .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+td.nc { color: var(--muted); }
+.note { color: var(--muted); font-size: 13px; }
+ul.checks { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 70ch; }
+.warn { background: var(--warn-bg); color: var(--warn-fg); border-radius: 8px; padding: 10px 14px; max-width: 70ch; }
+.warn strong { font-weight: 700; }
+pre { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-family: var(--font-mono); font-size: 13px; margin: 6px 0 0; }
+code { font-family: var(--font-mono); font-size: .92em; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>XIAO ESP32-C5 × Waveshare 3.5inch Capacitive Touch LCD 結線図</h1>
+    <p class="sub">液晶版ファーム <code>FPV_PANEL=CAPTOUCH35</code>（<code>main/fpv/fpv_config.h</code>）と同じピン配置。液晶は ST7796S（SPI）、タッチは FT6336U（I2C、0x38）。</p>
+  </header>
+
+  <div class="warn"><strong>LCD 側はケーブルの表示名で合わせてください。</strong>
+    タッチの割り込みとリセットは、ケーブルでは <code>INT</code> と <code>RST</code> と書かれています（<code>LCD_RST</code> とは別の線）。
+    下の接続図は線が交差しない順に並べてあり、コネクタの実際の並びは「コネクタの並び」を見てください。</div>
+
+  <section>
+    <h2>接続図（XIAO は部品面から見て USB-C が上）</h2>
+    <div class="figure">
+      <svg viewBox="0 0 780 470" role="img" aria-label="XIAO ESP32-C5 の各端子から LCD ケーブルの信号名への結線図">
+        <style>
+          .t { font-family: var(--font-mono); font-size: 13px; fill: var(--fg); }
+          .ts { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+          .tb { font-family: var(--font-mono); font-size: 12px; fill: var(--board-fg); }
+          .tbs { font-family: var(--font-mono); font-size: 10px; fill: var(--board-fg); opacity: .7; }
+          .lbl { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+          .box { fill: var(--surface); stroke-width: 2; }
+          .wire { stroke-width: 4; stroke-linecap: round; fill: none; }
+          .ncw { stroke: var(--nc); stroke-width: 2; stroke-dasharray: 4 5; fill: none; }
+        </style>
+
+        <!-- column headings -->
+        <text class="ts" x="130" y="34" text-anchor="middle">LCD ケーブルの信号名</text>
+        <text class="ts" x="650" y="34" text-anchor="middle">LCD ケーブルの信号名</text>
+
+        <!-- XIAO board -->
+        <rect x="290" y="60" width="200" height="330" rx="14" fill="var(--board)"/>
+        <rect x="355" y="46" width="70" height="30" rx="8" fill="var(--nc)"/>
+        <text class="tb" x="390" y="66" text-anchor="middle">USB-C</text>
+        <text class="tb" x="390" y="230" text-anchor="middle">XIAO</text>
+        <text class="tb" x="390" y="248" text-anchor="middle">ESP32-C5</text>
+        <text class="tbs" x="390" y="372" text-anchor="middle">部品面（上）から見た図</text>
+
+        <!-- pads: y = 100 + 42*i -->
+        <g fill="var(--pad)">
+          <circle cx="300" cy="100" r="7"/><circle cx="300" cy="142" r="7"/><circle cx="300" cy="184" r="7"/>
+          <circle cx="300" cy="226" r="7"/><circle cx="300" cy="268" r="7"/><circle cx="300" cy="310" r="7"/>
+          <circle cx="300" cy="352" r="7"/>
+          <circle cx="480" cy="100" r="7"/><circle cx="480" cy="142" r="7"/><circle cx="480" cy="184" r="7"/>
+          <circle cx="480" cy="226" r="7"/><circle cx="480" cy="268" r="7"/><circle cx="480" cy="310" r="7"/>
+          <circle cx="480" cy="352" r="7"/>
+        </g>
+
+        <!-- pad names inside the board: left column -->
+        <g class="tb">
+          <text x="314" y="98">D0</text><text x="314" y="140">D1</text><text x="314" y="182">D2</text>
+          <text x="314" y="224">D3</text><text x="314" y="266">D4</text><text x="314" y="308">D5</text>
+          <text x="314" y="350">D6</text>
+        </g>
+        <g class="tbs">
+          <text x="314" y="111">GPIO1</text><text x="314" y="153">GPIO0</text><text x="314" y="195">GPIO25</text>
+          <text x="314" y="237">GPIO7</text><text x="314" y="279">GPIO23</text><text x="314" y="321">GPIO24</text>
+          <text x="314" y="363">GPIO11</text>
+        </g>
+        <!-- right column -->
+        <g class="tb" text-anchor="end">
+          <text x="466" y="98">5V</text><text x="466" y="140">GND</text><text x="466" y="182">3V3</text>
+          <text x="466" y="224">D10</text><text x="466" y="266">D9</text><text x="466" y="308">D8</text>
+          <text x="466" y="350">D7</text>
+        </g>
+        <g class="tbs" text-anchor="end">
+          <text x="466" y="237">GPIO10</text><text x="466" y="279">GPIO9</text><text x="466" y="321">GPIO8</text>
+          <text x="466" y="363">GPIO12</text>
+        </g>
+
+        <!-- left wires -->
+        <path class="wire" stroke="var(--w-ctl)" d="M293 100 H210"/>
+        <path class="wire" stroke="var(--w-i2c)" d="M293 142 H210"/>
+        <path class="ncw" d="M293 184 H236"/>
+        <path class="ncw" d="M293 226 H236"/>
+        <path class="wire" stroke="var(--w-i2c)" d="M293 268 H210"/>
+        <path class="wire" stroke="var(--w-ctl)" d="M293 310 H210"/>
+        <path class="wire" stroke="var(--w-ctl)" d="M293 352 H210"/>
+
+        <!-- left label boxes -->
+        <g>
+          <rect class="box" x="50" y="85" width="160" height="30" rx="6" stroke="var(--w-ctl)"/>
+          <text class="lbl" x="130" y="105" text-anchor="middle" fill="var(--w-ctl)">RST</text>
+          <text class="ts" x="130" y="80" text-anchor="middle">タッチのリセット</text>
+          <rect class="box" x="50" y="127" width="160" height="30" rx="6" stroke="var(--w-i2c)"/>
+          <text class="lbl" x="130" y="147" text-anchor="middle" fill="var(--w-i2c)">TP_SCL</text>
+          <text class="ts" x="230" y="188" text-anchor="end">使わない（起動用ピン）</text>
+          <text class="ts" x="230" y="230" text-anchor="end">使わない（起動用ピン）</text>
+          <rect class="box" x="50" y="253" width="160" height="30" rx="6" stroke="var(--w-i2c)"/>
+          <text class="lbl" x="130" y="273" text-anchor="middle" fill="var(--w-i2c)">TP_SDA</text>
+          <rect class="box" x="50" y="295" width="160" height="30" rx="6" stroke="var(--w-ctl)"/>
+          <text class="lbl" x="130" y="315" text-anchor="middle" fill="var(--w-ctl)">LCD_BL</text>
+          <rect class="box" x="50" y="337" width="160" height="30" rx="6" stroke="var(--w-ctl)"/>
+          <text class="lbl" x="130" y="357" text-anchor="middle" fill="var(--w-ctl)">LCD_RST</text>
+        </g>
+
+        <!-- right wires -->
+        <path class="ncw" d="M487 100 H544"/>
+        <path class="wire" stroke="var(--w-gnd)" d="M487 142 H570"/>
+        <path class="wire" stroke="var(--w-pwr)" d="M487 184 H570"/>
+        <path class="wire" stroke="var(--w-spi)" d="M487 226 H570"/>
+        <path class="wire" stroke="var(--w-spi)" d="M487 268 H570"/>
+        <path class="wire" stroke="var(--w-spi)" d="M487 310 H570"/>
+        <path class="wire" stroke="var(--w-spi)" d="M487 352 H570"/>
+
+        <!-- right label boxes -->
+        <g>
+          <text class="ts" x="552" y="104">使わない</text>
+          <rect class="box" x="570" y="127" width="160" height="30" rx="6" stroke="var(--w-gnd)"/>
+          <text class="lbl" x="650" y="147" text-anchor="middle" fill="var(--w-gnd)">GND</text>
+          <rect class="box" x="570" y="169" width="160" height="30" rx="6" stroke="var(--w-pwr)"/>
+          <text class="lbl" x="650" y="189" text-anchor="middle" fill="var(--w-pwr)">VCC ＋ 3V3</text>
+          <rect class="box" x="570" y="211" width="160" height="30" rx="6" stroke="var(--w-spi)"/>
+          <text class="lbl" x="650" y="231" text-anchor="middle" fill="var(--w-spi)">MOSI</text>
+          <rect class="box" x="570" y="253" width="160" height="30" rx="6" stroke="var(--w-spi)"/>
+          <text class="lbl" x="650" y="273" text-anchor="middle" fill="var(--w-spi)">SCLK</text>
+          <rect class="box" x="570" y="295" width="160" height="30" rx="6" stroke="var(--w-spi)"/>
+          <text class="lbl" x="650" y="315" text-anchor="middle" fill="var(--w-spi)">LCD_CS</text>
+          <rect class="box" x="570" y="337" width="160" height="30" rx="6" stroke="var(--w-spi)"/>
+          <text class="lbl" x="650" y="357" text-anchor="middle" fill="var(--w-spi)">LCD_DC</text>
+        </g>
+
+        <!-- not connected on the LCD side -->
+        <text class="t" x="390" y="428" text-anchor="middle">LCD 側でつながない線：MISO・INT・SD_CS</text>
+        <text class="ts" x="390" y="450" text-anchor="middle">（液晶からは読まない／タッチは定期的に読む／TF スロットは空のまま）</text>
+      </svg>
+      <div class="legend">
+        <span><i style="background:var(--w-pwr)"></i>電源 3.3V</span>
+        <span><i style="background:var(--w-gnd)"></i>GND</span>
+        <span><i style="background:var(--w-spi)"></i>液晶 SPI</span>
+        <span><i style="background:var(--w-ctl)"></i>リセット・バックライト</span>
+        <span><i style="background:var(--w-i2c)"></i>タッチ I2C</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>コネクタの並び（実物、1 番ピンから）</h2>
+    <div class="figure">
+      <svg viewBox="0 0 760 172" role="img" aria-label="LCD 側 15 ピンコネクタの実際の並びと、それぞれをつなぐ XIAO の端子">
+        <style>
+          .t { font-family: var(--font-mono); font-size: 13px; fill: var(--fg); }
+          .ts { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+          .lbl { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+        </style>
+        <text class="ts" x="42" y="22" text-anchor="middle">1</text>
+        <rect x="21" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-pwr)" stroke-width="2"/>
+        <text class="lbl" transform="translate(47 126) rotate(-90)" fill="var(--w-pwr)">VCC</text>
+        <text class="t" x="42" y="158" text-anchor="middle" fill="var(--fg)">3V3</text>
+        <text class="ts" x="90" y="22" text-anchor="middle">2</text>
+        <rect x="69" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-pwr)" stroke-width="2"/>
+        <text class="lbl" transform="translate(95 126) rotate(-90)" fill="var(--w-pwr)">3V3</text>
+        <text class="t" x="90" y="158" text-anchor="middle" fill="var(--fg)">3V3</text>
+        <text class="ts" x="138" y="22" text-anchor="middle">3</text>
+        <rect x="117" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-gnd)" stroke-width="2"/>
+        <text class="lbl" transform="translate(143 126) rotate(-90)" fill="var(--w-gnd)">GND</text>
+        <text class="t" x="138" y="158" text-anchor="middle" fill="var(--fg)">GND</text>
+        <text class="ts" x="186" y="22" text-anchor="middle">4</text>
+        <rect x="165" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--nc)" stroke-width="2" stroke-dasharray="4 4"/>
+        <text class="lbl" transform="translate(191 126) rotate(-90)" fill="var(--nc)">MISO</text>
+        <text class="t" x="186" y="158" text-anchor="middle" fill="var(--nc)">—</text>
+        <text class="ts" x="234" y="22" text-anchor="middle">5</text>
+        <rect x="213" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-spi)" stroke-width="2"/>
+        <text class="lbl" transform="translate(239 126) rotate(-90)" fill="var(--w-spi)">MOSI</text>
+        <text class="t" x="234" y="158" text-anchor="middle" fill="var(--fg)">D10</text>
+        <text class="ts" x="282" y="22" text-anchor="middle">6</text>
+        <rect x="261" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-spi)" stroke-width="2"/>
+        <text class="lbl" transform="translate(287 126) rotate(-90)" fill="var(--w-spi)">SCLK</text>
+        <text class="t" x="282" y="158" text-anchor="middle" fill="var(--fg)">D9</text>
+        <text class="ts" x="330" y="22" text-anchor="middle">7</text>
+        <rect x="309" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--nc)" stroke-width="2" stroke-dasharray="4 4"/>
+        <text class="lbl" transform="translate(335 126) rotate(-90)" fill="var(--nc)">SD_CS</text>
+        <text class="t" x="330" y="158" text-anchor="middle" fill="var(--nc)">—</text>
+        <text class="ts" x="378" y="22" text-anchor="middle">8</text>
+        <rect x="357" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-spi)" stroke-width="2"/>
+        <text class="lbl" transform="translate(383 126) rotate(-90)" fill="var(--w-spi)">LCD_CS</text>
+        <text class="t" x="378" y="158" text-anchor="middle" fill="var(--fg)">D8</text>
+        <text class="ts" x="426" y="22" text-anchor="middle">9</text>
+        <rect x="405" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-spi)" stroke-width="2"/>
+        <text class="lbl" transform="translate(431 126) rotate(-90)" fill="var(--w-spi)">LCD_DC</text>
+        <text class="t" x="426" y="158" text-anchor="middle" fill="var(--fg)">D7</text>
+        <text class="ts" x="474" y="22" text-anchor="middle">10</text>
+        <rect x="453" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-ctl)" stroke-width="2"/>
+        <text class="lbl" transform="translate(479 126) rotate(-90)" fill="var(--w-ctl)">LCD_RST</text>
+        <text class="t" x="474" y="158" text-anchor="middle" fill="var(--fg)">D6</text>
+        <text class="ts" x="522" y="22" text-anchor="middle">11</text>
+        <rect x="501" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-ctl)" stroke-width="2"/>
+        <text class="lbl" transform="translate(527 126) rotate(-90)" fill="var(--w-ctl)">LCD_BL</text>
+        <text class="t" x="522" y="158" text-anchor="middle" fill="var(--fg)">D5</text>
+        <text class="ts" x="570" y="22" text-anchor="middle">12</text>
+        <rect x="549" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-i2c)" stroke-width="2"/>
+        <text class="lbl" transform="translate(575 126) rotate(-90)" fill="var(--w-i2c)">TP_SDA</text>
+        <text class="t" x="570" y="158" text-anchor="middle" fill="var(--fg)">D4</text>
+        <text class="ts" x="618" y="22" text-anchor="middle">13</text>
+        <rect x="597" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-i2c)" stroke-width="2"/>
+        <text class="lbl" transform="translate(623 126) rotate(-90)" fill="var(--w-i2c)">TP_SCL</text>
+        <text class="t" x="618" y="158" text-anchor="middle" fill="var(--fg)">D1</text>
+        <text class="ts" x="666" y="22" text-anchor="middle">14</text>
+        <rect x="645" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--nc)" stroke-width="2" stroke-dasharray="4 4"/>
+        <text class="lbl" transform="translate(671 126) rotate(-90)" fill="var(--nc)">INT</text>
+        <text class="t" x="666" y="158" text-anchor="middle" fill="var(--nc)">—</text>
+        <text class="ts" x="714" y="22" text-anchor="middle">15</text>
+        <rect x="693" y="30" width="42" height="104" rx="5" fill="var(--surface)" stroke="var(--w-ctl)" stroke-width="2"/>
+        <text class="lbl" transform="translate(719 126) rotate(-90)" fill="var(--w-ctl)">RST</text>
+        <text class="t" x="714" y="158" text-anchor="middle" fill="var(--fg)">D0</text>
+      </svg>
+    </div>
+    <p class="note">上段がピン番号、枠の中がケーブルの表示、下段がつなぐ XIAO の端子。点線の枠（MISO・SD_CS・INT）はつながない。</p>
+  </section>
+
+  <section>
+    <h2>ピン対応表（実物の並び）</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ピン</th><th>ケーブル表示</th><th>XIAO 端子</th><th>GPIO</th><th>役割</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="sig"><span class="dot" style="background:var(--w-pwr)"></span>VCC</td><td>3V3</td><td>—</td><td>電源（5V にはつながない）</td></tr>
+          <tr><td>2</td><td class="sig"><span class="dot" style="background:var(--w-pwr)"></span>3V3</td><td>3V3</td><td>—</td><td>VCC と同じ 3V3 へ</td></tr>
+          <tr><td>3</td><td class="sig"><span class="dot" style="background:var(--w-gnd)"></span>GND</td><td>GND</td><td>—</td><td></td></tr>
+          <tr><td>4</td><td class="sig nc">MISO</td><td class="nc">—</td><td class="nc">—</td><td class="nc">つながない</td></tr>
+          <tr><td>5</td><td class="sig"><span class="dot" style="background:var(--w-spi)"></span>MOSI</td><td>D10</td><td>10</td><td>液晶データ</td></tr>
+          <tr><td>6</td><td class="sig"><span class="dot" style="background:var(--w-spi)"></span>SCLK</td><td>D9</td><td>9</td><td>液晶クロック（40MHz）</td></tr>
+          <tr><td>7</td><td class="sig nc">SD_CS</td><td class="nc">—</td><td class="nc">—</td><td class="nc">つながない</td></tr>
+          <tr><td>8</td><td class="sig"><span class="dot" style="background:var(--w-spi)"></span>LCD_CS</td><td>D8</td><td>8</td><td>液晶チップセレクト</td></tr>
+          <tr><td>9</td><td class="sig"><span class="dot" style="background:var(--w-spi)"></span>LCD_DC</td><td>D7</td><td>12</td><td>データ／コマンド切替</td></tr>
+          <tr><td>10</td><td class="sig"><span class="dot" style="background:var(--w-ctl)"></span>LCD_RST</td><td>D6</td><td>11</td><td>液晶リセット</td></tr>
+          <tr><td>11</td><td class="sig"><span class="dot" style="background:var(--w-ctl)"></span>LCD_BL</td><td>D5</td><td>24</td><td>バックライト（High で点灯）</td></tr>
+          <tr><td>12</td><td class="sig"><span class="dot" style="background:var(--w-i2c)"></span>TP_SDA</td><td>D4</td><td>23</td><td>タッチ I2C データ</td></tr>
+          <tr><td>13</td><td class="sig"><span class="dot" style="background:var(--w-i2c)"></span>TP_SCL</td><td>D1</td><td>0</td><td>タッチ I2C クロック（400kHz）</td></tr>
+          <tr><td>14</td><td class="sig nc">INT</td><td class="nc">—</td><td class="nc">—</td><td class="nc">タッチ割り込み。つながない</td></tr>
+          <tr><td>15</td><td class="sig"><span class="dot" style="background:var(--w-ctl)"></span>RST</td><td>D0</td><td>1</td><td>タッチリセット</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">D2（GPIO25）と D3（GPIO7）は起動モードを決めるピンなので空けておく。D6/D7 は ESP-SDR の UART ですが、液晶版ファームでは使っていません。</p>
+  </section>
+
+  <section>
+    <h2>つなぐ前の確認</h2>
+    <ul class="checks">
+      <li><strong>VCC は 3V3 へ。</strong>このモジュールは電源電圧が信号の電圧になるので、5V につなぐと C5 に 5V が入るおそれがあります。</li>
+      <li>ケーブルに VCC と 3V3 の両方があれば、両方とも XIAO の 3V3 へ。</li>
+      <li>電池で動かすときも 3V3 から取る（電池だけのとき XIAO の 5V 端子には電圧が出ません）。</li>
+      <li>TF カードは入れない（SD_CS をつないでいないため）。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>書き込み</h2>
+    <p class="note">ビルド済みのファイル（2026-10-10 ビルド、実機では未確認）を 0x0 に書く：</p>
+    <pre>python -m esptool --chip esp32c5 --port COMx write-flash 0x0 prebuilt/fpv-lcd-xiao-c5-captouch35-merged.bin</pre>
+  </section>
+</div>

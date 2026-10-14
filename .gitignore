@@ -54,3 +54,8 @@ tests/fpv_host/cycles/*.elf
 /tests/fpv_host/*.bin
 /tests/fpv_host/*.ppm
 /components/LovyanGFX/
+
+# KiCad local state and autosaves
+*.kicad_prl
+fp-info-cache
+*-backups/

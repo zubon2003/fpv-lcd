@@ -1,0 +1,13 @@
+** Drc report for xiao_captouch35.kicad_pcb **
+** Created on 2026-10-10T09:36:37+0900 **
+
+** Found 1 DRC violations **
+[lib_footprint_mismatch]: フットプリント 'PinHeader_1x15_P2.54mm_Horizontal' が、ライブラリ 'Connector_PinHeader_2.54mm' のコピーと一致しません。
+    Local override; warning
+    @(104.0400 mm, 125.0000 mm): フットプリント J1
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** End of Report **

@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "xiao_lcd")(type "KiCad")(uri "${KIPRJMOD}/xiao_lcd.kicad_sym")(options "")(descr "project"))
+)
