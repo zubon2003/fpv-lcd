@@ -57,7 +57,7 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
 <main>
   <header>
     <h1>FPV バンドモニタ ファーム書き込み</h1>
-    <p class="lead">XIAO ESP32-C5 で動く FPV 5.8 GHz（FM-ATV）バンドモニタ・液晶版のファームを、ブラウザから USB で書き込みます。グループ（4CH / 4CH2 / 4CH3 / 3CH）の監視、グループごとの Wi-Fi チェック（受信のみ）、PC 版（fft / iq）との接続に対応。</p>
+    <p class="lead">XIAO ESP32-C5 で動く FPV 5.8 GHz（FM-ATV）バンドモニタ・液晶版のファームを、ブラウザから USB で書き込みます。グループ（4CH / 4CH2 / 4CH3 / 3CH）の監視、グループごとの Wi-Fi チェック（受信のみ）とグループ内 IMD の表示、PC 版（fft / iq）との接続に対応。</p>
   </header>
 
   <section aria-labelledby="h-panel">
@@ -86,7 +86,7 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
         <span slot="unsupported" class="warn">このブラウザは USB 書き込み（Web Serial）に対応していません。パソコンの Chrome か Edge で開いてください。</span>
         <span slot="not-allowed" class="warn">このページは https で開く必要があります。</span>
       </esp-web-install-button>
-      <p class="note">ファームのバージョン <span class="mono" id="fw-version">1e5ff84</span> ・ チップ ESP32-C5 ・ アドレス 0x0 に 1 ファイル</p>
+      <p class="note">ファームのバージョン <span class="mono" id="fw-version">442c958</span> ・ チップ ESP32-C5 ・ アドレス 0x0 に 1 ファイル</p>
     </div>
     <ol>
       <li>XIAO ESP32-C5 を USB-C でパソコンにつなぐ。</li>

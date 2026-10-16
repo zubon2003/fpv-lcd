@@ -1,6 +1,6 @@
 {
   "name": "FPV band monitor (XIAO ESP32-C5, 3.5\" Capacitive Touch LCD)",
-  "version": "1e5ff84",
+  "version": "442c958",
   "new_install_prompt_erase": true,
   "builds": [
     {
