@@ -40,6 +40,7 @@ extern "C" {
 #include "fpv_config.h"
 #include "sdr_hw.h"
 #include "ui.hpp"
+#include "logo.h"
 
 namespace fpv {
 
@@ -677,6 +678,10 @@ static void fpv_command(const char *line, const sweep_plan_t &plan, int gain) {
         wifi_listen_reply(c.ival, c.ms);
         return;
     case FC_WIFICHECK:
+        if (!is_group(c.ival) || !has_wifi_page((Mode)c.ival)) {
+            link_reply("ERR no WiFi check for that group\n");
+            return;
+        }
         s_open_wifi = c.ival;
         link_reply("OK\n");
         return;
@@ -1146,6 +1151,22 @@ static bool apply_pc_commands() {
     return any;
 }
 
+/* The splash logo (4-bit intensity of its colour, see logo/make_logo.py), a row at a time. */
+template <typename D> static void draw_logo(D &d, int x0, int y0) {
+    lgfx::rgb565_t pal[16], row[LOGO_W];
+    for (int i = 0; i < 16; i++)
+        pal[i] = lgfx::rgb565_t((uint8_t)((LOGO_RGB >> 16 & 0xff) * i / 15),
+                                (uint8_t)((LOGO_RGB >> 8 & 0xff) * i / 15), (uint8_t)((LOGO_RGB & 0xff) * i / 15));
+    const uint8_t *p = LOGO;
+    for (int y = 0; y < LOGO_H; y++) {
+        for (int x = 0; x < LOGO_W; x += 2, p++) {
+            row[x] = pal[*p >> 4];
+            row[x + 1] = pal[*p & 15];
+        }
+        d.pushImage(x0, y0 + y, LOGO_W, 1, row);
+    }
+}
+
 static void ui_task(void *) {
     s_lcd.init();
     backlight(true);
@@ -1153,12 +1174,14 @@ static void ui_task(void *) {
     s_lcd.fillScreen(TFT_BLACK);
 
     /* Splash; holding the screen during it recalibrates the touch. */
+    const int logo_y = (SCR_H - LOGO_H - 44) / 2, text_y = logo_y + LOGO_H + 24;
+    draw_logo(s_lcd, (SCR_W - LOGO_W) / 2, logo_y);
     s_lcd.setFont(&fonts::Font2);
     s_lcd.setTextColor(TFT_WHITE, TFT_BLACK);
     s_lcd.setTextDatum(textdatum_t::middle_center);
-    s_lcd.drawString("FPV band monitor  ESP32-C5", SCR_W / 2, SCR_H / 2 - 12);
+    s_lcd.drawString("FPV band monitor  ESP32-C5", SCR_W / 2, text_y - 10);
     s_lcd.setTextColor(0x8C71u, TFT_BLACK);
-    s_lcd.drawString("hold the screen to calibrate touch", SCR_W / 2, SCR_H / 2 + 12);
+    s_lcd.drawString("hold the screen to calibrate touch", SCR_W / 2, text_y + 10);
     uint16_t cal[8];
     bool have_cal = touch_cal_load(cal);
     if (have_cal) s_lcd.setTouchCalibrate(cal);

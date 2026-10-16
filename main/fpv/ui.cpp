@@ -1,5 +1,6 @@
 #include "ui.hpp"
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include "channels.h"
@@ -11,6 +12,7 @@ namespace fpv {
 #if FPV_SCREEN_480
 static constexpr int SX(int v) { return v * 3 / 2; }
 static constexpr int SY(int v) { return v * 4 / 3; }
+#define F_XS (&fonts::DejaVu9)
 #define F_S (&fonts::DejaVu12)
 #define F_M (&fonts::DejaVu18)
 #define F_L (&fonts::DejaVu24)
@@ -18,6 +20,7 @@ static constexpr int SY(int v) { return v * 4 / 3; }
 #else
 static constexpr int SX(int v) { return v; }
 static constexpr int SY(int v) { return v; }
+#define F_XS (&fonts::Font0)
 #define F_S (&fonts::Font0)
 #define F_M (&fonts::Font2)
 #define F_L (&fonts::Font4)
@@ -180,7 +183,7 @@ int modes_hit(int x, int y, bool *wifi) {
     if (y < PG_TITLE_H) return x >= PG_CLOSE_X0 ? PICK_CLOSE : PICK_NONE;
     int i = (y - PG_TITLE_H) / MODE_ROW_H;
     if (i > GROUP_COUNT - 1) i = GROUP_COUNT - 1;
-    *wifi = x >= MODE_WIFI_X0 - SX(2);
+    *wifi = x >= MODE_WIFI_X0 - SX(2) && has_wifi_page(GROUP_ORDER[i]);
     return i;
 }
 
@@ -745,6 +748,7 @@ void Renderer::draw_modes(const ModesView &mv) {
             d.drawString(b, cx, (y0 + y1) / 2 + SY(6));
         }
         /* this group's Wi-Fi check */
+        if (!has_wifi_page(row.mode)) continue;
         d.fillRoundRect(MODE_WIFI_X0, y0, SCR_W - MODE_WIFI_X0, y1 - y0, 5, text);
         d.setFont(F_M);
         d.setTextDatum(textdatum_t::middle_center);
@@ -780,13 +784,47 @@ static const WifiApInfo *ap_on(const WifiView &w, int ch) {
     return best;
 }
 
+/* Within the group itself, Wi-Fi aside, on channel k: another channel within
+ * FPV_GROUP_ADJ_MHZ (1st order), and a 2 x A - B or A + B - C product of the
+ * others within FPV_GROUP_IMD_MHZ (3rd order) - the closest of each. */
+struct GroupHit {
+    int a, b, c;               /* 1st: a; 3rd: 2 x a - b (c < 0) or a + b - c */
+    int mhz, dist;             /* where it lands, how far from channel k */
+    int count;                 /* how many of this order in all; 0 = none */
+};
+struct GroupHits {
+    GroupHit first, third;
+};
+template <typename F> static void group_products(const GroupInfo &g, int k, F take) {
+    for (int a = 0; a < g.n; a++)
+        for (int b = 0; b < g.n; b++) {
+            if (a == b || a == k || b == k) continue;
+            take(a, b, -1, 2 * g.mhz[a] - g.mhz[b]);
+            for (int c = 0; a < b && c < g.n; c++)
+                if (c != a && c != b && c != k) take(a, b, c, g.mhz[a] + g.mhz[b] - g.mhz[c]);
+        }
+}
+static GroupHits group_hits(const GroupInfo &g, int k) {
+    GroupHits h{};
+    auto take = [&](GroupHit &t, int limit, int a, int b, int c, int mhz) {
+        int dist = abs(mhz - g.mhz[k]);
+        if (dist > limit) return;
+        if (!t.count || dist < t.dist) t = {a, b, c, mhz, dist, t.count};
+        t.count++;
+    };
+    for (int j = 0; j < g.n; j++)
+        if (j != k) take(h.first, FPV_GROUP_ADJ_MHZ, j, -1, -1, g.mhz[j]);
+    group_products(g, k, [&](int a, int b, int c, int mhz) { take(h.third, FPV_GROUP_IMD_MHZ, a, b, c, mhz); });
+    return h;
+}
+
 void Renderer::draw_wifi(const WifiView &w) {
     lgfx::LovyanGFX &d = *dst_;
     const GroupInfo &g = w.group;
     const uint16_t bg = rgb(UI_RGB[C_BG]), btn = rgb(UI_RGB[C_BTN]), text = rgb(UI_RGB[C_TEXT]);
     const uint16_t axis = rgb(UI_RGB[C_AXIS]), dim = rgb(UI_RGB[C_DIM]), grid = rgb(UI_RGB[C_GRID]);
     const uint32_t RED = 0xff3b30, YELLOW = UI_RGB[C_DEV_WARN];
-    const uint16_t green = rgb(0x45d97a);
+    const uint16_t green = rgb(0x45d97a), orange = rgb(0xff9500);
     char b[64];
     d.startWrite();
     page_title(d, mode_label(g.mode));
@@ -815,6 +853,12 @@ void Renderer::draw_wifi(const WifiView &w) {
         d.setTextColor(rgb(c));
         d.drawString(g.name[k], wmap_x((float)g.mhz[k]), y_grp);
     }
+    for (int k = 0; k < g.n; k++)                      /* 3rd-order products on the group */
+        group_products(g, k, [&](int, int, int, int f) {
+            if (abs(f - g.mhz[k]) > FPV_GROUP_IMD_MHZ) return;
+            int x = wmap_x((float)f);
+            for (int y = y_grp + SY(10); y < y_grp + grp_h; y += SY(4)) d.drawFastVLine(x, y, SY(2), orange);
+        });
     d.setTextDatum(textdatum_t::middle_center);
     for (int i = 0; i < w.nch; i++) {
         const WifiChanInfo &c = w.chan[i];
@@ -864,13 +908,78 @@ void Renderer::draw_wifi(const WifiView &w) {
         d.setTextDatum(textdatum_t::middle_left);
         d.setTextColor(rgb(CH_RGB[g.color[k]]));
         d.drawString(g.name[k], SX(4), y0 + row_h / 2);
+        const GroupHits gh = group_hits(g, k);
+        const bool grp = gh.first.count || gh.third.count;
         d.setFont(F_S);
-        d.setTextColor(axis);
+        d.setTextColor(grp ? orange : axis);
         snprintf(b, sizeof(b), "%d", g.mhz[k]);
         d.drawString(b, SX(36), y0 + row_h / 2);
 
+        /* status word, then a stack of lines at xd: the Wi-Fi cause and its AP
+         * (F_S), then the group's own 1st / 3rd order (F_XS, orange) */
         const int xs = SX(70), xd = SX(132);
+        char lines[4][64];
+        const lgfx::IFont *font[4];
+        uint16_t colour[4];
+        int nl = 0;
+        if (best >= 0) {
+            const WifiChanInfo &c = w.chan[best];
+            if (best_direct) {
+                snprintf(lines[nl], 64, "ch%d %d  %d dBm", c.ch, wifi_mhz(c.ch), c.rssi_max);
+            } else {
+                int v = c.imd[k] > 0 ? c.imd[k] - 1 : -c.imd[k] - 1;
+                if (c.imd[k] > 0) snprintf(lines[nl], 64, "ch%d  2x%s-WiFi  %d dBm", c.ch, g.name[v], c.rssi_max);
+                else snprintf(lines[nl], 64, "ch%d  2xWiFi-%s  %d dBm", c.ch, g.name[v], c.rssi_max);
+            }
+            font[nl] = F_S;
+            colour[nl++] = text;
+            const WifiApInfo *a = ap_on(w, c.ch);
+            if (a) snprintf(lines[nl], 64, "%.18s", a->ssid[0] ? a->ssid : "(hidden)");
+            else snprintf(lines[nl], 64, "(no beacon heard)");
+            if (count > 1) {
+                size_t l = strlen(lines[nl]);
+                snprintf(lines[nl] + l, 64 - l, "  +%d more", count - 1);
+            }
+            font[nl] = F_S;
+            colour[nl++] = axis;
+        }
+        if (gh.first.count) {
+            const GroupHit &h = gh.first;
+            snprintf(lines[nl], 64, "1st  %s %d  (%d MHz)", g.name[h.a], h.mhz, h.dist);
+            if (h.count > 1) {
+                size_t l = strlen(lines[nl]);
+                snprintf(lines[nl] + l, 64 - l, " +%d", h.count - 1);
+            }
+            font[nl] = F_XS;
+            colour[nl++] = orange;
+        }
+        if (gh.third.count) {
+            const GroupHit &h = gh.third;
+            if (h.c < 0)
+                snprintf(lines[nl], 64, "3rd  2x%s-%s %d  (%d MHz)", g.name[h.a], g.name[h.b], h.mhz, h.dist);
+            else
+                snprintf(lines[nl], 64, "3rd  %s+%s-%s %d  (%d MHz)", g.name[h.a], g.name[h.b], g.name[h.c],
+                         h.mhz, h.dist);
+            if (h.count > 1) {
+                size_t l = strlen(lines[nl]);
+                snprintf(lines[nl] + l, 64 - l, " +%d", h.count - 1);
+            }
+            font[nl] = F_XS;
+            colour[nl++] = orange;
+        }
+        int total = 0;
+        for (int i = 0; i < nl; i++) total += d.fontHeight(font[i]);
+        int y = y0 + (row_h - total) / 2;
+        d.setTextDatum(textdatum_t::top_left);
+        for (int i = 0; i < nl; i++) {
+            d.setFont(font[i]);
+            d.setTextColor(colour[i]);
+            d.drawString(lines[i], xd, y);
+            y += d.fontHeight(font[i]);
+        }
+
         d.setFont(F_M);
+        d.setTextDatum(textdatum_t::middle_left);
         if (best < 0) {
             bool all = w.done == w.nch;
             d.setTextColor(all ? green : dim);
@@ -880,28 +989,6 @@ void Renderer::draw_wifi(const WifiView &w) {
         const WifiChanInfo &c = w.chan[best];
         d.setTextColor(rgb(blend(best_direct ? RED : YELLOW, UI_RGB[C_BG], wifi_alpha(c.rssi_max, 0.4f))));
         d.drawString(best_direct ? "Direct" : "IMD", xs, y0 + row_h / 2);
-        /* ch, how, dBm, which AP */
-        d.setFont(F_S);
-        d.setTextDatum(textdatum_t::bottom_left);
-        d.setTextColor(text);
-        if (best_direct) {
-            snprintf(b, sizeof(b), "ch%d %d  %d dBm", c.ch, wifi_mhz(c.ch), c.rssi_max);
-        } else {
-            int v = c.imd[k] > 0 ? c.imd[k] - 1 : -c.imd[k] - 1;
-            if (c.imd[k] > 0) snprintf(b, sizeof(b), "ch%d  2x%s-WiFi  %d dBm", c.ch, g.name[v], c.rssi_max);
-            else snprintf(b, sizeof(b), "ch%d  2xWiFi-%s  %d dBm", c.ch, g.name[v], c.rssi_max);
-        }
-        d.drawString(b, xd, y0 + row_h / 2);
-        const WifiApInfo *a = ap_on(w, c.ch);
-        d.setTextDatum(textdatum_t::top_left);
-        d.setTextColor(axis);
-        if (a) snprintf(b, sizeof(b), "%.18s", a->ssid[0] ? a->ssid : "(hidden)");
-        else snprintf(b, sizeof(b), "(no beacon heard)");
-        if (count > 1) {
-            size_t l = strlen(b);
-            snprintf(b + l, sizeof(b) - l, "  +%d more", count - 1);
-        }
-        d.drawString(b, xd, y0 + row_h / 2 + SY(1));
     }
     d.endWrite();
 }

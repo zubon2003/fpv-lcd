@@ -44,6 +44,8 @@ enum Mode : uint8_t {
 /* The groups, in the order of the mode list. */
 constexpr int GROUP_COUNT = 4;
 constexpr Mode GROUP_ORDER[GROUP_COUNT] = {MODE_4CH, MODE_4CH2, MODE_4CH3, MODE_3CH};
+/* Whether a group has a Wi-Fi check. 4CH3 (Raceband) has none (user's choice). */
+inline bool has_wifi_page(Mode m) { return m != MODE_4CH3; }
 const char *mode_label(Mode m);
 
 struct UiChannel {

@@ -149,6 +149,10 @@
 #define FPV_WIFI_RSSI_STRONG -50 /* Wi-Fi page: full colour from this (dBm) ... */
 #define FPV_WIFI_RSSI_WEAK -85   /* ... faint at and below this */
 #define FPV_WIFI_DWELL_MS 1200  /* Wi-Fi page: listening time per channel (beacons every ~100 ms) */
+#define FPV_GROUP_ADJ_MHZ 20    /* Wi-Fi page: warn when two of the group's channels are this close
+                                  * (1st order, inclusive) ... */
+#define FPV_GROUP_IMD_MHZ 15    /* ... or a 2 x A - B / A + B - C product of them is this close to
+                                  * another (3rd order, inclusive) */
 #define FPV_SAT_PERMILLE 10     /* "SAT" when a hop has this many saturated samples per 1000 */
 #define FPV_BAT_EMPTY_MV 3300   /* battery icon: empty .. full */
 #define FPV_BAT_FULL_MV 4150

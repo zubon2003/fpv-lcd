@@ -54,6 +54,8 @@
 - モード：4CH = E2 E1 F3 F5、4CH2 = **E1 A8 A5 F5**、4CH3 = **R2 F1 R4 R5**（2026-10-14 追加）、3CH = **E1 F1 F4**、1CH = ±15 MHz。**1CH はグループに属する**（2026-10-14 ユーザー指定）：カードで入り、◀▶ はグループ内、中央でグループに戻る、色はグループでの色。Settings.mode はグループ、single は index | 0x80（1CH 表示中）。NVS "set3"（旧 "set2"/"set" はグループに変換、1CH は 4CH に）。
 - 色：3CH・4CH（と PC の複数ch）は周波数の低い順に 赤・緑・青・黄（2026-10-14 ユーザー指定）。1CH は従来の固定色。
 - Wi-Fi（2026-10-14）：`FPV WIFI <ch> [ms]` と、モード一覧の**グループごとの WiFi ボタン**。ch100〜177 のうちそのグループに Direct / IMD（2×VTX−WiFi、2×WiFi−VTX、17 MHz 判定）になる ch だけを事前計算して 1.2 s ずつ聞き、FPV チャンネルごとに OK / Direct / IMD を出す（画面の文言は英語：ユーザー指定）。ESP-SDR が NULL モード＋promiscuous で Wi-Fi を起動しているのを使い、`sdr_hw_wifi_listen` で AGC にして `esp_wifi_set_channel` → コールバックで集計 → `rx_ready=false` で SDR に戻す（DC は dc_generation で自動再測定）。**送信しない**（scan_start・80211_tx は使わない。ユーザーが気にした点）。占有幅はビーコンの HT/VHT operation IE から。バッファは heap（.bss 余裕 約 2.8 KB）。書き込みの merged bin は NVS も上書きするので設定が初期化される。
+- グループ内 IMD（2026-10-16〜17）：WiFi check の各行に、WiFi とは別にグループ自身の **1st（他チャンネルとの間隔 ≤20 MHz、`FPV_GROUP_ADJ_MHZ`）** と **3rd（2A−B・A+B−C が他チャンネルから ≤15 MHz、`FPV_GROUP_IMD_MHZ`）** をオレンジ・小さいフォント（F_XS）で、それぞれ一番近いもの＋件数を出す（E1・A8 は両方）。帯グラフに 3rd の積を破線。**4CH3 は WiFi ボタンなし**（`has_wifi_page`、`FPV WIFICHECK` も ERR）。
+- スプラッシュに SKN ロゴ（2026-10-17）：`main/fpv/logo.h`（4bit 濃度、`logo/make_logo.py` で生成）はリポジトリに入れる。**元画像 `main/fpv/logo/skn_logo.jpg` はアップしない**（ユーザー指定、`.git/info/exclude`）。
 - 帯域マークは **9 MHz と 17 MHz**。
 - 測定は **直近 10 掃引の単純平均**（10 掃引分をメモリに保存、Q58 の整数累積で正確）。
 - UI（2026-10-14 整理）：モードは左上のチャンネル表示 → モード一覧、1CH はチャンネル表（A E F R）／カードを押してズーム／1CH 中央で戻る。カードはずれが主役（地の色もずれの色）。セットアップは GAIN・DETECT・INFO・TOUCH のみ。飽和は受信側で ADC のレール（±510）を数え、1 % 以上で SAT 表示（STATE の clip=千分率）。
