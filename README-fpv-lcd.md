@@ -75,7 +75,7 @@ CLOSE で何も変えずに戻る。
 | GAIN | ゲイン（テーブル番号 0〜60、60 の次が AUTO。C5 は 55 以上で飽和しやすい。飽和中は赤で表示） |
 | DETECT | 信号ありと判定する、ノイズからの高さ（6〜30 dB、既定 18） |
 | INFO | 掃引の速さ、ノイズの床、電池、受信エラー（開いた時点の値） |
-| TOUCH | タッチの調整 |
+| SCREEN | CALIBRATE：タッチの調整。ROTATE 180：画面とタッチを 180 度回す（押すとすぐ切り替わって保存される） |
 
 設定は保存され、次回もその状態で起動する。
 
@@ -108,7 +108,7 @@ D2/D3（GPIO25/7）はストラップピンなので使っていない。D6（GP
 専用のファーム `firmware/fpv-lcd-xiao-c5-restouch35-merged.bin` を書く（2.8" 用とは別。ビルドは `-D FPV_PANEL=RESTOUCH35`）。
 画面の配置・操作は 2.8" 版と同じで、480×320 に合わせて拡大し、文字は DejaVu フォントになる。
 
-配線は下駄基板（`hardware/xiao_restouch35_adapter/`）に合わせてあり、**2.8" 版とはピンが違う**。
+配線は片面の下駄基板に合わせてあり、**2.8" 版とはピンが違う**（下駄基板のファイルは 2026-11-22 にリポジトリから外した）。
 結線図：[web/wiring/restouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/restouch35.html)（3.5" 静電容量式は [captouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)）。
 下駄基板は Pico と同じ外形・ピン位置（21×51 mm）に XIAO 用の延長（24 mm）を足したもので、基板の Pico 用ソケットにそのまま挿す。
 銅箔は片面（裏）だけで交差なし。信号のある Pico ピンにだけ穴がある。
@@ -127,18 +127,6 @@ D2/D3（GPIO25/7）はストラップピンなので使っていない。D6（GP
 | VSYS（39） | 下駄基板の VSYS パッドへ線で（下記） | – |
 | TP_IRQ（GP17）、SD_CS（GP22） | 未接続 | – |
 
-下駄基板のファイル：
-
-| ファイル | 内容 |
-|---|---|
-| `xiao_restouch35_adapter.dxf` | 上から見た図。レイヤ OUTLINE（外形）、COPPER_BOTTOM（裏の銅箔、閉じた輪郭）、TRACK_CENTER（配線の中心線、幅 0.6 mm）、DRILL（穴 1.0 mm／線用 0.9 mm）、SILK_TOP（XIAO の位置・ピン名） |
-| `xiao_restouch35_adapter_bottom_mirrored.dxf` | 裏の銅箔を銅箔側から見た図（左右反転）。トナー転写・フィルム用 |
-| `xiao_restouch35_adapter_preview.png` | 確認用の絵（上から見た図、ピン名・GPIO 入り） |
-| `copper_top_view_1to1_600dpi.png` | 裏の銅箔を上から見た白黒の図。600 dpi、100 % で印刷すると実寸 |
-| `copper_mirrored_1to1_600dpi.png` | 同じく左右反転（銅箔側から見た図）。トナー転写用 |
-| `silk_top.png` | 部品面の印字（XIAO の位置・ピン名） |
-| `make_geta.py` | 生成スクリプト（`python3 make_geta.py 出力先`、ezdxf と shapely が要る）。クリアランス 0.4 mm 以上を自動で確認する |
-
 - XIAO は**部品面を上**にして延長部に載せ、USB-C を基板の端に合わせる。Pico 用のピンヘッダ（オス）は裏から立てる。
 - 延長部は Pico の USB 側の外に出る。ResTouch 基板の Pico の向き（USB の側）を基板のシルクで確かめてから挿す。
 - 下の 2 つのピン（20、21）は Pico と同じく基板の端から 0.47 mm の位置にある。
@@ -153,6 +141,14 @@ D2/D3（GPIO25/7）はストラップピンなので使っていない。D6（GP
   （LovyanGFX の `dlen_16bit`、色は RGB565）。SPI は 20 MHz（`FPV_LCD_SPI_HZ`）。ESP32 で 20 MHz を超えると乱れたという報告がある。
 - タッチの校正値は 2.8" 版と別に保存する。初回起動時に校正画面が出る。
 - **実機では未確認**。色が反転していたら `FPV_LCD_INVERT` を false に、表示が乱れるなら `FPV_LCD_SPI_HZ` を 10 MHz に下げる。
+
+## Waveshare 3.5inch Capacitive Touch LCD を使う場合
+
+専用のファーム（ビルドは `-D FPV_PANEL=CAPTOUCH35`、ブラウザからも書き込める）。液晶は ST7796S、タッチは FT6336U（I2C、校正不要）。
+結線図：[captouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)。
+
+液晶の裏に重ねる本体基板（FFC 版）は `hardware/captouch35_ffc/`（KiCad 8 の基板、`jlcpcb/` にガーバー・BOM・CPL）。
+液晶とは 18 ピン 0.5 mm の FFC でつなぎ、ピンは `fpv_config.h` の `FPV_PANEL_CAPTOUCH35` と同じ。詳しくは同フォルダの README。
 
 ## PC との接続（USB）
 

@@ -47,7 +47,6 @@
 - `python3 check_link.py <pc版>` … 疑似端末で偽ファーム ↔ PC 版の受信（auto→fft、NOLCD、格子、重心）。
 - `python3 render_previews.py <pc版>` … 画面 PNG（`previews/screen_*`=2.8"、`screen35_*`=3.5"）。2.8" は変更前とピクセル一致を保つこと。
 - `cycles/` … unicorn で RV32 命令数を数える速度見積もり。
-- 下駄基板：`hardware/xiao_restouch35_adapter/make_geta.py`（ezdxf, shapely, Pillow）。クリアランス 0.4 mm を自動確認。
 
 ## 決まった仕様（ユーザーの指定）
 
@@ -58,7 +57,7 @@
 - スプラッシュに SKN ロゴ（2026-10-17）：`main/fpv/logo.h`（4bit 濃度、`logo/make_logo.py` で生成）はリポジトリに入れる。**元画像 `main/fpv/logo/skn_logo.jpg` はアップしない**（ユーザー指定、`.git/info/exclude`）。
 - 帯域マークは **9 MHz と 17 MHz**。
 - 測定は **直近 10 掃引の単純平均**（10 掃引分をメモリに保存、Q58 の整数累積で正確）。
-- UI（2026-10-14 整理）：モードは左上のチャンネル表示 → モード一覧、1CH はチャンネル表（A E F R）／カードを押してズーム／1CH 中央で戻る。カードはずれが主役（地の色もずれの色）。セットアップは GAIN・DETECT・INFO・TOUCH のみ。飽和は受信側で ADC のレール（±510）を数え、1 % 以上で SAT 表示（STATE の clip=千分率）。
+- UI（2026-10-14 整理）：モードは左上のチャンネル表示 → モード一覧、1CH はチャンネル表（A E F R）／カードを押してズーム／1CH 中央で戻る。カードはずれが主役（地の色もずれの色）。セットアップは GAIN・DETECT・INFO・SCREEN（CALIBRATE と ROTATE 180）のみ。ROTATE 180 は setRotation を 1↔3 にするだけ（タッチも LovyanGFX が回す、校正はパネル座標なので取り直し不要）で、押した時点で NVS に保存（2026-11-22）。飽和は受信側で ADC のレール（±510）を数え、1 % 以上で SAT 表示（STATE の clip=千分率）。
 - 電池：3.30 V 未満が 3 回でディープスリープ、起動は 3.40 V 以上、休止中は 60 秒ごとに測って 3.70 V で復帰。
 - USB：`FPV` で始まる行が独自プロトコル（`main/fpv/link.h`）、それ以外は ESP-SDR の I/Q コマンド（5 秒のリース）。PC 版は **auto（FPV? に答えれば fft、だめなら iq）/ iq / fft** をボタンで選べる。`FPV NOLCD` で液晶を消して掃引だけ（STREAM OFF・送信失敗・FPV LCD・タップで復帰）。
 - 3.5" 版のピンは下駄基板（片面・交差なし）に合わせて 2.8" 版と変えてある（`fpv_config.h` の `FPV_PANEL_RESTOUCH35` 側）。
@@ -70,7 +69,7 @@
 - 下駄基板：Pico の寸法（列間 17.78 mm、1 番ピン端から 1.37 mm）と XIAO ピン配置は標準値からの作図。実物合わせ未確認。ResTouch 上の Pico の向き（USB 側が基板の外か）も未確認。
 - 掃引速度：実測（2026-10-09、3.5"、PC の 4CH 相当 9 ホップ）は DC キャッシュ前 1.34 / NOLCD 2.47、**後 2.96 / NOLCD 6.3 sweeps/s**。液晶ありは描画（約 0.18 s/掃引）が次の律速。
 - 3.5" ResTouch の表示・タッチ・ゲイン 25 は実機で動作（2026-10-10、2 台目の XIAO）。
-- 3.5" 静電容量式（`FPV_PANEL=CAPTOUCH35`、ST7796S + FT6336U）はジャンパ線で実機動作（2026-10-14、XIAO MAC 10:BD:A3:CF:81:00）。ケーブルの並びは `fpv_config.h` のコメントどおり（タッチは INT / RST 表記）。結線図は `web/wiring/captouch35.html`（ResTouch は `web/wiring/restouch35.html`、どちらも GitHub Pages で公開）。基板（`xiao_captouch35_board`）は未発注。書き込み後に RTS リセットで抜けないときは watchdog リセットか RESET ボタン。
+- 3.5" 静電容量式（`FPV_PANEL=CAPTOUCH35`、ST7796S + FT6336U）はジャンパ線で実機動作（2026-10-14、XIAO MAC 10:BD:A3:CF:81:00）。ケーブルの並びは `fpv_config.h` のコメントどおり（タッチは INT / RST 表記）。結線図は `web/wiring/captouch35.html`（ResTouch は `web/wiring/restouch35.html`、どちらも GitHub Pages で公開）。本体基板は FFC 版 `hardware/captouch35_ffc/`（KiCad 8、`jlcpcb/` にガーバー・BOM・CPL。生成スクリプトはリポジトリに置かない：2026-11-22 ユーザー指定）。旧 15 ピン版 `xiao_captouch35_board` と ResTouch 用下駄基板 `xiao_restouch35_adapter` は 2026-11-22 に削除。書き込み後に RTS リセットで抜けないときは watchdog リセットか RESET ボタン。
 - 5833 MHz 以上の LO ではホップ端（±23〜27 MHz）が −2〜−4 dB 落ち、min 合成で LO 位置（5807, 5833, 5858 など）に谷が出る。upstream の C5 帯域は全幅約 48 MHz（±24）。対策案：近い方のホップを使い 6 dB 以上高いときだけ min（未実装）。
 - 消費電流（見積もり：2.8" 150〜190 mA、3.5" 220〜280 mA、NOLCD 約 100 mA、スリープ 30〜100 µA）。
 - さらに速くするなら FFT の radix-4 化が次の候補。

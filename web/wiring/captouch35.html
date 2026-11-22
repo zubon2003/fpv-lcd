@@ -329,9 +329,9 @@ code { font-family: var(--font-mono); font-size: .92em; }
   <section>
     <h2>ファーム</h2>
     <p class="note">このパネル用のビルド（<code>-D FPV_PANEL=CAPTOUCH35</code>）を 0x0 に書く。実機で動作確認済み（2026-10-14）。
-    ブラウザからの書き込みページは、今のところ 3.5" ResTouch と 2.8" 版だけ。</p>
+    <a href="https://zubon2003.github.io/fpv-lcd/">ブラウザからの書き込みページ</a>からも書ける。</p>
     <pre>python -m esptool --chip esp32c5 --port COMx write-flash 0x0 fpv-lcd-xiao-c5-captouch35-merged.bin</pre>
-    <p class="note">専用の基板（KiCad、ガーバー）：<a href="https://github.com/zubon2003/fpv-lcd/tree/main/hardware/xiao_captouch35_board">hardware/xiao_captouch35_board</a></p>
+    <p class="note">液晶の裏に重ねる専用の基板（FFC でつなぐ版。KiCad、JLCPCB 用のガーバー・BOM・CPL）：<a href="https://github.com/zubon2003/fpv-lcd/tree/main/hardware/captouch35_ffc">hardware/captouch35_ffc</a>。ピンはこの図と同じ。</p>
   </section>
 </div>
 </body>

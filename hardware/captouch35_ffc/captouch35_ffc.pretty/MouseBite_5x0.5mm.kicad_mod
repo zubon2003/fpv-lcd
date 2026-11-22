@@ -1,0 +1,101 @@
+(footprint "MouseBite_5x0.5mm"
+	(version 20240108)
+	(generator "pcbnew")
+	(generator_version "8.0")
+	(layer "F.Cu")
+	(property "Reference" "MB1"
+		(at 0 0 0)
+		(layer "F.SilkS")
+		(hide yes)
+		(uuid "d6f1086e-412d-414d-b331-6f667e073d9d")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(property "Value" "MouseBite"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "1fa6ec53-8ec1-4ea7-a892-17b77158e226")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Footprint" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "fa885500-e5b5-4c3a-bcba-78ebb4b876c0")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "3fbc2bfa-2037-4727-ad2e-0c5151a3564e")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "680997e3-de49-4e6e-9508-894fcbc377f4")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr board_only exclude_from_pos_files exclude_from_bom)
+	(pad "" np_thru_hole circle
+		(at 0 -1.6)
+		(size 0.5 0.5)
+		(drill 0.5)
+		(layers "F&B.Cu" "*.Mask")
+		(uuid "f3dd29a0-c0ed-475f-99fd-cf7bda250035")
+	)
+	(pad "" np_thru_hole circle
+		(at 0 -0.8)
+		(size 0.5 0.5)
+		(drill 0.5)
+		(layers "F&B.Cu" "*.Mask")
+		(uuid "c524ebb7-874e-42e5-862f-2f60bafbfe9d")
+	)
+	(pad "" np_thru_hole circle
+		(at 0 0)
+		(size 0.5 0.5)
+		(drill 0.5)
+		(layers "F&B.Cu" "*.Mask")
+		(uuid "b71b262e-eb1d-4f67-832d-9856ffc356f4")
+	)
+	(pad "" np_thru_hole circle
+		(at 0 0.8)
+		(size 0.5 0.5)
+		(drill 0.5)
+		(layers "F&B.Cu" "*.Mask")
+		(uuid "a6d237b7-0677-452b-8f6d-26b81278ba25")
+	)
+	(pad "" np_thru_hole circle
+		(at 0 1.6)
+		(size 0.5 0.5)
+		(drill 0.5)
+		(layers "F&B.Cu" "*.Mask")
+		(uuid "13a2b7f4-dbed-4517-a12b-f89eb7327c35")
+	)
+)

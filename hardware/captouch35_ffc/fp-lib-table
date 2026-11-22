@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "captouch35_ffc")(type "KiCad")(uri "${KIPRJMOD}/captouch35_ffc.pretty")(options "")(descr "project"))
+)
