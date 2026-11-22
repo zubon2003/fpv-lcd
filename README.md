@@ -55,7 +55,10 @@ PC なしでスペクトラム・ウォーターフォール・各 VTX の実測
 
 ### 3. ケース
 
-- [`hardware/case.STL`](hardware/case.STL)：3D プリント用（SolidWorks から書き出し、単位 mm）。外形 96.44 × 65 × 30.38 mm。
+**ケースは、寸法図と手元の部品（液晶・基板・電池・スイッチ・SMA）の寸法を確かめながら、自分で設計することをおすすめします。**
+ここの STL は作者の部品に合わせた一例で、部品の個体差や電池・スイッチの選び方によっては合いません。
+
+- [`hardware/case.STL`](hardware/case.STL)：作者が使っているケース（参考）（SolidWorks から書き出し、単位 mm）。外形 96.44 × 65 × 30.38 mm。
 - [`hardware/case_drawing.pdf`](hardware/case_drawing.pdf)：寸法図（A3・1:1・第三角法）。天板の 4 穴（液晶の M2.5 穴と同じ間隔 73.84 × 45.58）、
   USB の切り欠き、スイッチ穴、SMA の穴の位置と大きさ。
 
@@ -70,7 +73,7 @@ PC なしでスペクトラム・ウォーターフォール・各 VTX の実測
 | M2.5 スペーサー 8 mm × 4、ネジ | 液晶と基板の間 |
 | U.FL – SMA（パネル取り付け）ピグテール、5.8 GHz アンテナ | |
 | リチウムイオン / リポ 1 セル、BT2.0 コネクタ、スイッチ | 電池駆動する場合 |
-| ケース（上の STL を 3D プリント） | |
+| ケース | 寸法を確かめて自分で設計するのがおすすめ（STL は参考） |
 
 ピン配置は `main/fpv/fpv_config.h` の `FPV_PANEL_CAPTOUCH35` と同じで、基板を使えば配線は不要です。
 ジャンパ線でつなぐ場合の結線図：[captouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)。
