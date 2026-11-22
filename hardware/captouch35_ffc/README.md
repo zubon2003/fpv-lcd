@@ -41,7 +41,7 @@ Waveshare 3.5inch Capacitive Touch LCD の裏に M2.5 スペーサー (8mm) で�
 | J1 | FFC コネクタ 18P 0.5mm、上下両面接点、フリップロック (HDGC 0.5K-HX-18PWB、LCSC C2919497、拡張部品) | JLCPCB が実装 |
 | J2, J3 | XIAO のピンヘッダー (XIAO に付属のもの) | 自分で |
 | J4 | BT2.0 メス (BETAFPV) | 自分で |
-| | FFC ケーブル 18P 0.5mm、長さ 50mm (長くてもとりあえず大丈夫。A でも B でもよい) | |
+| | FFC ケーブル 18P 0.5mm、長さ 50mm (長くてもとりあえず大丈夫。接点タイプは A / B どちらでもよい) | |
 | | M2.5 スペーサー 8mm x 4、ネジ | |
 | | U.FL - SMA (パネル取り付け) のピグテール | |
 
