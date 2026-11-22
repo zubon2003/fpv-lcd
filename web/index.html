@@ -61,28 +61,16 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
   </header>
 
   <section aria-labelledby="h-panel">
-    <h2 id="h-panel">1. 液晶を選ぶ</h2>
-    <div class="panels" role="radiogroup">
-      <label class="panel-opt">
-        <input type="radio" name="panel" value="restouch35" id="panel-restouch35" checked>
-        <strong>3.5" Pico-ResTouch-LCD-3.5</strong>
-        <span>Waveshare、480×320、ILI9488 + XPT2046。下駄基板の配線</span>
-      </label>
-      <label class="panel-opt">
-        <input type="radio" name="panel" value="captouch35" id="panel-captouch35">
-        <strong>3.5" Capacitive Touch LCD</strong>
-        <span>Waveshare、480×320、ST7796S + FT6336U（静電容量式）。専用基板またはジャンパ線</span>
-      </label>
-    </div>
-    <p class="note">結線図：<a href="wiring/restouch35.html">3.5" Pico-ResTouch-LCD-3.5</a> ・
-      <a href="wiring/captouch35.html">3.5" Capacitive Touch LCD（静電容量式）</a></p>
+    <h2 id="h-panel">1. 対応する液晶</h2>
+    <p><strong>Waveshare 3.5inch Capacitive Touch LCD</strong>（480×320、ST7796S + FT6336U、静電容量式）。専用基板（FFC 版）またはジャンパ線でつなぐ。タッチの校正は不要。</p>
+    <p class="note">結線図：<a href="wiring/captouch35.html">3.5" Capacitive Touch LCD</a></p>
   </section>
 
   <section aria-labelledby="h-install">
     <h2 id="h-install">2. つないで書き込む</h2>
     <div class="install">
-      <esp-web-install-button id="installer" manifest="manifest-restouch35.json">
-        <button slot="activate" class="btn" type="button">書き込む（<span id="sel-label">3.5" ResTouch</span>）</button>
+      <esp-web-install-button id="installer" manifest="manifest-captouch35.json">
+        <button slot="activate" class="btn" type="button">書き込む</button>
         <span slot="unsupported" class="warn">このブラウザは USB 書き込み（Web Serial）に対応していません。パソコンの Chrome か Edge で開いてください。</span>
         <span slot="not-allowed" class="warn">このページは https で開く必要があります。</span>
       </esp-web-install-button>
@@ -91,8 +79,8 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
     <ol>
       <li>XIAO ESP32-C5 を USB-C でパソコンにつなぐ。</li>
       <li>「書き込む」を押し、出てきた一覧から XIAO のポート（USB JTAG/serial debug unit、Windows では「USB シリアル デバイス (COMx)」）を選ぶ。</li>
-      <li>「消去してから書き込む」を選ぶと、保存した設定（モード・ゲイン・タッチ校正・画面の向き）も消える。ふつうは消去しなくてよい。</li>
-      <li>終わったら XIAO の RESET を 1 回押す。ResTouch は初回に液晶へタッチ校正の画面が出る（10 秒触らなければ既定値で進む）。静電容量式は校正不要。</li>
+      <li>「消去してから書き込む」を選ぶと、保存した設定（モード・ゲイン・画面の向き）も消える。ふつうは消去しなくてよい。</li>
+      <li>終わったら XIAO の RESET を 1 回押す。</li>
     </ol>
     <p class="warn"><strong>つながらないとき：</strong>XIAO の BOOT を押したまま RESET を押して離し、BOOT を離してから、もう一度「書き込む」。他のアプリ（PC 版モニタ、ESP-WebSDR など）がポートを使っていたら閉じる。</p>
   </section>
@@ -100,9 +88,8 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
   <section aria-labelledby="h-manual">
     <h2 id="h-manual">コマンドで書く場合</h2>
     <p>ファイルを保存して esptool で 0x0 に書き込む：
-      <a href="firmware/fpv-lcd-xiao-c5-restouch35.bin">3.5" ResTouch 版</a> ・
-      <a href="firmware/fpv-lcd-xiao-c5-captouch35.bin">3.5" 静電容量式版</a></p>
-    <pre><code>python -m esptool --chip esp32c5 write-flash 0x0 fpv-lcd-xiao-c5-restouch35.bin</code></pre>
+      <a href="firmware/fpv-lcd-xiao-c5-captouch35.bin">fpv-lcd-xiao-c5-captouch35.bin</a></p>
+    <pre><code>python -m esptool --chip esp32c5 write-flash 0x0 fpv-lcd-xiao-c5-captouch35.bin</code></pre>
   </section>
 
   <footer>
@@ -110,17 +97,5 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; }
     <p>書き込みは ESPHome の <a href="https://github.com/esphome/esp-web-tools">ESP Web Tools</a>（中身は Espressif の esptool-js）を使っています。</p>
   </footer>
 </main>
-<script>
-  const labels = { restouch35: '3.5" ResTouch', captouch35: '3.5" 静電容量式' };
-  const installer = document.getElementById('installer');
-  const selLabel = document.getElementById('sel-label');
-  for (const r of document.querySelectorAll('input[name="panel"]')) {
-    r.addEventListener('change', () => {
-      if (!r.checked) return;
-      installer.setAttribute('manifest', `manifest-${r.value}.json`);
-      selLabel.textContent = labels[r.value];
-    });
-  }
-</script>
 </body>
 </html>

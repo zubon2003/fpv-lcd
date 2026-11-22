@@ -46,10 +46,10 @@ PC なしでスペクトラム・ウォーターフォール・各 VTX の実測
 
 ### 2. ファームを書き込む（ブラウザ）
 
-**https://zubon2003.github.io/fpv-lcd/** を パソコンの Chrome か Edge で開き、液晶の種類を選んで「書き込む」を押すだけです。
+**https://zubon2003.github.io/fpv-lcd/** を パソコンの Chrome か Edge で開き、「書き込む」を押すだけです。
 
 1. XIAO ESP32-C5 を USB-C でパソコンにつなぐ。
-2. 液晶（3.5" 静電容量式 / 3.5" Pico-ResTouch）を選んで「書き込む」→ XIAO のポートを選ぶ。
+2. 「書き込む」を押し、XIAO のポートを選ぶ。
 3. 終わったら XIAO の RESET を 1 回押す。
 
 つながらないときは、XIAO の BOOT を押したまま RESET を押して離し、BOOT を離してからやり直します。
@@ -61,7 +61,7 @@ PC なしでスペクトラム・ウォーターフォール・各 VTX の実測
 - [`hardware/case_drawing.pdf`](hardware/case_drawing.pdf)：寸法図（A3・1:1・第三角法）。天板の 4 穴（液晶の M2.5 穴と同じ間隔 73.84 × 45.58）、
   USB の切り欠き、スイッチ穴、SMA の穴の位置と大きさ。
 
-## 必要なもの（3.5" 静電容量式で作る場合）
+## 必要なもの
 
 | 部品 | 備考 |
 |---|---|
@@ -75,8 +75,7 @@ PC なしでスペクトラム・ウォーターフォール・各 VTX の実測
 | ケース（上の STL を 3D プリント） | |
 
 ピン配置は `main/fpv/fpv_config.h` の `FPV_PANEL_CAPTOUCH35` と同じで、基板を使えば配線は不要です。
-ジャンパ線でつなぐ場合の結線図：[静電容量式](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)・
-[Pico-ResTouch](https://zubon2003.github.io/fpv-lcd/wiring/restouch35.html)。
+ジャンパ線でつなぐ場合の結線図：[captouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)。
 
 ## もっと詳しく
 
@@ -98,7 +97,7 @@ idf.py -B build-fpvcap -D FPV_LCD_MONITOR=ON -D FPV_PANEL=CAPTOUCH35 -D SDKCONFI
   set-target esp32c5 build
 ```
 
-Pico-ResTouch 版は `-D FPV_PANEL=RESTOUCH35`、2.8" ILI9341 版は `FPV_PANEL` なし。`-D FPV_LCD_MONITOR=ON` を付けなければ元の ESP-SDR になります。
+`-D FPV_LCD_MONITOR=ON` を付けなければ元の ESP-SDR になります。
 
 ## ライセンス
 

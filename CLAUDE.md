@@ -27,9 +27,10 @@
 
 - https://zubon2003.github.io/fpv-lcd/ … `web/`（ESP Web Tools 10.4.0、ESP32-C5 対応）。`.github/workflows/pages.yml` が `web/**` の push で公開する。
 - upstream の CI（`firmware.yml`、`rebuild-site.yml`）はこのリポジトリでは GitHub 上で無効にしてある（ファイルは upstream と合わせるため残す）。
-- ファームは CI でビルドしていない。ページに置くのは 3.5" ResTouch（`build-fpv35`）と 3.5" 静電容量式（`build-fpvcap`）の 2 つ（2.8" は 2026-10-14 にユーザー指示で外した）。各ビルドフォルダで
-  `python -m esptool --chip esp32c5 merge-bin -o <repo>/web/firmware/fpv-lcd-xiao-c5-{restouch35,captouch35}.bin @flash_args`、
-  `web/manifest-*.json` と `index.html` の `version`（ソースのコミット）を書き換えてコミットする。
+- ファームは CI でビルドしていない。ページに置くのは 3.5" 静電容量式（`build-fpvcap`）だけ（2.8" は 2026-10-14、3.5" ResTouch は 2026-11-22 にユーザー指示で外した。ResTouch のコードと README-fpv-lcd.md の記述は残してある）。`build-fpvcap` で
+  `python -m esptool --chip esp32c5 merge-bin -o <repo>/web/firmware/fpv-lcd-xiao-c5-captouch35.bin @flash_args`、
+  `web/manifest-captouch35.json` と `index.html` の `version`（ソースのコミット）を書き換えてコミットする。
+- 公開向けの README.md（液晶版の紹介・JLCPCB 発注・Web 書き込み・ケース）と MANUAL.md（操作マニュアル）も静電容量式だけを書く。元の ESP-SDR の README は README-esp-sdr.md。
 
 ## 守ること（ハマった点）
 
