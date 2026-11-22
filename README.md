@@ -39,6 +39,8 @@ PC なしでスペクトラム・ウォーターフォール・各 VTX の実測
 1. JLCONE（アプリ）または jlcpcb.com で PCB の注文を開き、`captouch35_ffc_gerber.zip` をアップロードする（2 層、1.6 mm）。
 2. PCB Assembly を ON にし、BOM と CPL をアップロードする。実装するのは **J1（FFC コネクタ、LCSC C2919497）の 1 点だけ**、片面（Top）。
 
+参考価格（2026-11 の注文、5 枚とも J1 を実装）：PCB 5 枚 $1.91 + PCBA $14.27 + 送料 $8.80 = **$24.98**（1 枚あたり約 $5）。
+
 ほかの部品（XIAO のピンヘッダー、BT2.0 コネクタ）は自分ではんだ付けします。
 注文前の確認（原寸で印刷して液晶に重ねる）・結線・組み立ての注意は [`hardware/captouch35_ffc/README.md`](hardware/captouch35_ffc/README.md) にあります。
 
