@@ -1,5 +1,7 @@
 # FPV バンドモニタ 液晶版（XIAO ESP32-C5）
 
+<img src="picture/IMG_0317.jpg" width="640" alt="ケースに入れた液晶版バンドモニタ（4CH 表示、USB 給電）">
+
 5.8 GHz のアナログ FPV 映像電波（FM-ATV）を、手のひらサイズの液晶で監視するバンドモニタです。
 XIAO ESP32-C5 の Wi-Fi 受信機を SDR として使い（[ESP-SDR](https://github.com/ESPARGOS/esp-sdr) のフォーク）、
 PC なしでスペクトラム・ウォーターフォール・各 VTX の実測中心周波数とずれを表示します。
@@ -15,6 +17,12 @@ PC なしでスペクトラム・ウォーターフォール・各 VTX の実測
 - 電池駆動（低電圧で自動シャットダウン）、画面の 180 度回転、PC 版モニタとの USB 接続
 
 使い方は **[操作マニュアル（MANUAL.md）](MANUAL.md)** を見てください。
+
+## 写真
+
+| 電池で動かしているところ | ケースの中（液晶の裏に本体基板、XIAO はピンソケットで挿す） |
+|---|---|
+| <img src="picture/IMG_0314.jpg" width="380" alt="電池で動かしている液晶版バンドモニタ"> | <img src="picture/IMG_0315.jpg" width="380" alt="ケースを外したところ。液晶の裏に本体基板と XIAO ESP32-C5、FFC、スペーサー"> |
 
 ## このリポジトリに入っているもの
 
