@@ -12,6 +12,7 @@
  * +-15 MHz).
  */
 #include <math.h>
+#include <stddef.h>
 #include <new>
 #include <stdio.h>
 #include <string.h>
@@ -195,10 +196,16 @@ struct Settings {
     uint8_t single = 2;                 /* index in the group (F3 in 4CH), SINGLE_ON: 1CH shown */
     int8_t gain = FPV_DEFAULT_GAIN;
     uint8_t snr = FPV_DEFAULT_SNR_DB;   /* detection threshold */
+    uint8_t rot180 = 0;                 /* screen and touch upside down (added later: older blobs lack it) */
 };
+constexpr size_t SETTINGS_V3_SIZE = offsetof(Settings, rot180);
 constexpr uint8_t SINGLE_ON = 0x80;
 static Settings s_set;
 static const char *NVS_NS = "fpvmon";
+
+/* LovyanGFX turns the touch with the panel, and the calibration is in the
+ * panel's own frame: one setRotation covers both and costs nothing per frame. */
+static int lcd_rotation() { return s_set.rot180 ? (FPV_LCD_ROTATION + 2) & 3 : FPV_LCD_ROTATION; }
 
 static int single_index() { return s_set.single & 0x7f; }
 static bool single_shown() { return s_set.single & SINGLE_ON; }
@@ -217,12 +224,13 @@ static void settings_load() {
     if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
     Settings t;
     size_t n = sizeof(t);
-    bool ok = nvs_get_blob(h, NVS_SET, &t, &n) == ESP_OK && n == sizeof(t);
+    bool ok = nvs_get_blob(h, NVS_SET, &t, &n) == ESP_OK && n >= SETTINGS_V3_SIZE;
     if (!ok) {
         const char *old[] = {"set2", "set"};
         for (int i = 0; i < 2 && !ok; i++) {
+            t = Settings();
             n = sizeof(t);
-            ok = nvs_get_blob(h, old[i], &t, &n) == ESP_OK && n == sizeof(t);
+            ok = nvs_get_blob(h, old[i], &t, &n) == ESP_OK && n == SETTINGS_V3_SIZE;
         }
         if (ok) {
             if (!is_group(t.mode)) t.mode = MODE_4CH;
@@ -981,6 +989,7 @@ static SetupView setup_view() {
     sv.floor_db = s_view.floor_db;
     sv.clip_permille = s_clip_permille;
     sv.rx_errors = s_rx_errors;
+    sv.rot180 = s_edit.rot180;
     return sv;
 }
 
@@ -996,6 +1005,11 @@ static bool on_setup_hit(SetupHit h) {
     case SH_SNR_DOWN: if (s_edit.snr > FPV_SNR_MIN_DB) s_edit.snr--; break;
     case SH_SNR_UP: if (s_edit.snr < FPV_SNR_MAX_DB) s_edit.snr++; break;
     case SH_CAL: calibrate_touch(); break;
+    case SH_ROTATE:             /* at once (and saved), so the next press lands where it is drawn */
+        s_edit.rot180 = s_set.rot180 = !s_set.rot180;
+        settings_save();
+        s_lcd.setRotation(lcd_rotation());
+        break;
     case SH_DONE: {
         bool regain = s_edit.gain != s_set.gain;
         s_set.gain = s_edit.gain;
@@ -1170,7 +1184,7 @@ template <typename D> static void draw_logo(D &d, int x0, int y0) {
 static void ui_task(void *) {
     s_lcd.init();
     backlight(true);
-    s_lcd.setRotation(FPV_LCD_ROTATION);
+    s_lcd.setRotation(lcd_rotation());
     s_lcd.fillScreen(TFT_BLACK);
 
     /* Splash; holding the screen during it recalibrates the touch. */

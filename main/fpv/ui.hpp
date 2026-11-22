@@ -100,9 +100,10 @@ struct SetupView {
     float floor_db;
     int clip_permille;
     unsigned rx_errors;
+    bool rot180;               /* screen and touch turned upside down */
 };
 enum SetupHit : uint8_t {
-    SH_NONE = 0, SH_DONE, SH_CAL, SH_GAIN_DOWN, SH_GAIN_UP, SH_SNR_DOWN, SH_SNR_UP,
+    SH_NONE = 0, SH_DONE, SH_CAL, SH_ROTATE, SH_GAIN_DOWN, SH_GAIN_UP, SH_SNR_DOWN, SH_SNR_UP,
 };
 SetupHit setup_hit(int x, int y);
 /* buttons that repeat while held */
