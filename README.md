@@ -61,7 +61,7 @@ XIAO は秋月の分割ロングピンソケット（105779）で基板に付け
 
 - [`hardware/case.STL`](hardware/case.STL)：作者が使っているケース（参考。SolidWorks から書き出し、単位 mm）。外形 96.44 × 65 × 30.38 mm。
 - [`hardware/case_drawing.pdf`](hardware/case_drawing.pdf)：寸法図（A3・1:1・第三角法）。天板の 4 穴（液晶の M2.5 穴と同じ間隔 73.84 × 45.58）、
-  USB の切り欠き、スイッチ穴、SMA の穴の位置と大きさ。
+  USB の切り欠き、BT2.0 の穴、SMA の穴の位置と大きさ。
 
 ## 必要なもの
 
