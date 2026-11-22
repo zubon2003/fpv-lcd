@@ -33,7 +33,7 @@ Waveshare 3.5inch Capacitive Touch LCD の裏に M2.5 の六角スペーサー (
 | 14 | TP_SDA | D4 | 表 |
 | 6, 10, 11, 15-18 | MISO, SD_CS, NC, TP_INT, NC | つながない | |
 
-電池: BT2.0 (サブ基板の J4) の足から電線で、+ はスイッチを通して XIAO の BAT+、- は XIAO の BAT- へ (XIAO の裏のパッド)。
+電池: BT2.0 (サブ基板の J4) の足から電線で、+ は XIAO の BAT+、- は XIAO の BAT- へ (XIAO の裏のパッド)。
 
 ## 部品
 | 記号 | 部品 | 付け方 |
