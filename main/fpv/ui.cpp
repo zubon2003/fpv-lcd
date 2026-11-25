@@ -507,16 +507,34 @@ void Renderer::readout_box(const UiView &v, const UiChannel &c, int x, int w) {
         s.setTextColor(dev_colour(off));
         snprintf(b, sizeof(b), "%+.2f", off);
         s.drawString(b, x + w / 2, RO_H / 2 + SY(2));
-        s.setFont(F_S);
-        s.setTextDatum(textdatum_t::bottom_center);
+        s.setFont(F_XS);
+        s.setTextDatum(textdatum_t::bottom_left);
         s.setTextColor(C_AXIS);
-        snprintf(b, sizeof(b), "%.2f MHz", c.smoothed);
-        s.drawString(b, x + w / 2, RO_H - SY(5));
+#if FPV_SCREEN_480
+        snprintf(b, sizeof(b), "%.2f", c.smoothed);
+#else
+        snprintf(b, sizeof(b), "%.1f", c.smoothed);
+#endif
+        s.drawString(b, x + SX(5), RO_H - SY(5));
     } else {
         s.setFont(F_M);
         s.setTextDatum(textdatum_t::middle_center);
         s.setTextColor(C_DIM);
         s.drawString(absent_text(c.m), x + w / 2, RO_H / 2 + SY(4));
+    }
+
+    /* level: the highest bin near the channel, dB full scale (also with no
+     * signal, where it is the noise) */
+    if (c.m.peak_db == c.m.peak_db) {
+        s.setFont(F_XS);
+        s.setTextDatum(textdatum_t::bottom_right);
+        s.setTextColor(live ? C_TEXT : C_DIM);
+#if FPV_SCREEN_480
+        snprintf(b, sizeof(b), "%.0fdBFS", c.m.peak_db);
+#else
+        snprintf(b, sizeof(b), "%.0fdB", c.m.peak_db);
+#endif
+        s.drawString(b, x + w - SX(5), RO_H - SY(5));
     }
 }
 
@@ -576,7 +594,7 @@ void Renderer::readout_single(const UiView &v, const UiChannel &c) {
     s.drawString(b, xd, SY(3));
     s.setFont(F_S);
     s.setTextColor(C_AXIS);
-    if (c.m.snr_db == c.m.snr_db) snprintf(b, sizeof(b), "SNR %.0f  peak %.0f", c.m.snr_db, c.m.peak_db);
+    if (c.m.snr_db == c.m.snr_db) snprintf(b, sizeof(b), "SNR %.0f  %.0f dBFS", c.m.snr_db, c.m.peak_db);
     else snprintf(b, sizeof(b), "SNR --");
     s.drawString(b, xd, SY(22));
     if (live && c.m.bw3_mhz == c.m.bw3_mhz && c.m.bw20_mhz == c.m.bw20_mhz)

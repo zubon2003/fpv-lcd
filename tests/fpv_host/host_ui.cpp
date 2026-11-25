@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
     if (!r.begin(&screen)) { fprintf(stderr, "sprites\n"); return 4; }
     r.draw_all(v);
     if (getenv("FPV_SETUP")) {                 /* the setup screen instead */
-        SetupView sv{(Mode)atoi(getenv("FPV_SETUP")), "F3", 5780, 40, 18, v.bat_mv};
+        SetupView sv{40, 18, v.bat_mv, v.sweeps_per_s, v.floor_db, 0, 0, false};
         r.draw_setup(sv);
     }
 
