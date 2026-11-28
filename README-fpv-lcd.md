@@ -1,9 +1,10 @@
-# FPV バンドモニタ 液晶版（XIAO ESP32-C5 + ILI9341 / Waveshare 3.5"）
+# FPV バンドモニタ 液晶版（XIAO ESP32-C5 + Waveshare 3.5" 静電容量式）
 
 [fpv-band-monitor-c5](https://github.com/zubon2003/fpv-band-monitor-c5)（PC 版）の解析と画面を、
 ESP32-C5 単体で動くように [ESP-SDR](https://github.com/ESPARGOS/esp-sdr) ファームに組み込んだもの。
-PC は不要で、2.8" ILI9341 + XPT2046 タッチ液晶にスペクトラム・ウォーターフォール・実測中心周波数を表示する。
-Waveshare Pico-ResTouch-LCD-3.5（3.5" 480×320、ILI9488 + XPT2046）用のビルドもある（同じ画面を 1.5 倍で表示）。
+PC は不要で、Waveshare 3.5inch Capacitive Touch LCD（3.5" 480×320、ST7796S + FT6336U）に
+スペクトラム・ウォーターフォール・実測中心周波数を表示する。
+（2.8" ILI9341 版と Pico-ResTouch-LCD-3.5 版は 2026-11-28 に削除した。）
 **アナログ FPV の映像電波（FM-ATV）専用**。
 
 追加したコードは `main/fpv/` にまとまっている。ESP-SDR 側の変更は
@@ -23,7 +24,7 @@ Waveshare Pico-ResTouch-LCD-3.5（3.5" 480×320、ILI9488 + XPT2046）用のビ�
 各チャンネルには **9 MHz と 17 MHz** の帯域マーク（内側が濃い）を描く。
 ホップが少ないほど更新が速い。
 
-## 画面（320×240、3.5" は 480×320）
+## 画面（480×320）
 
 - 上段：表示中のチャンネル（チャンネルの色で）／電池（残量アイコンと電圧、USB 給電なら USB）／SETUP／HOLD
 - スペクトラム：灰色が最新の掃引、白が平均（測定に使う線）、点線がピークホールド。
@@ -75,80 +76,40 @@ CLOSE で何も変えずに戻る。
 | GAIN | ゲイン（テーブル番号 0〜60、60 の次が AUTO。C5 は 55 以上で飽和しやすい。飽和中は赤で表示） |
 | DETECT | 信号ありと判定する、ノイズからの高さ（6〜30 dB、既定 18） |
 | INFO | 掃引の速さ、ノイズの床、電池、受信エラー（開いた時点の値） |
-| SCREEN | CALIBRATE：タッチの調整。ROTATE 180：画面とタッチを 180 度回す（押すとすぐ切り替わって保存される） |
+| SCREEN | ROTATE 180：画面とタッチを 180 度回す（押すとすぐ切り替わって保存される） |
 
 設定は保存され、次回もその状態で起動する。
 
-**タッチの調整**：初回起動時に調整画面が出る（10 秒触らなければ既定値で起動）。
-やり直すときは、起動直後の画面（約 1.5 秒）を押し続ける。
+**タッチの調整**はない（2026-11-28 に削除）。座標は `main/fpv/monitor.cpp` のタッチ設定（`x_min`〜`y_max`）だけで決まる。
+以前のファームが保存した校正値は起動時に消す。
 
-## 配線（XIAO ESP32-C5）
+## 液晶と配線（XIAO ESP32-C5）
 
-| 液晶基板のピン | XIAO | GPIO |
-|---|---|---|
-| SCK と T_CLK | D8 | 8 |
-| SDI(MOSI) と T_DIN | D10 | 10 |
-| T_DO | D9 | 9 |
-| SDO(MISO) | 未接続 | – |
-| CS | D0 | 1 |
-| D/C | D1 | 0 |
-| RESET | D4 | 23 |
-| T_CS | D5 | 24 |
-| T_IRQ | 未接続（ポーリング） | – |
-| LED | D6 | 11 |
-| VCC | 3V3（基板裏の J1 を短絡） | – |
-| GND | GND | – |
-
-D2/D3（GPIO25/7）はストラップピンなので使っていない。D6（GPIO11）は通常の ESP-SDR では UART に使うが、このビルドでは UART を切ってバックライトに使う。
-電池で動かすときは XIAO の 5V ピンに電圧が出ないので、液晶の VCC は必ず 3V3 から取り、液晶基板の J1 を短絡する。
-ピンや画面の向きは `main/fpv/fpv_config.h` で変えられる（`FPV_LCD_ROTATION` 1 か 3）。
-
-## Waveshare Pico-ResTouch-LCD-3.5 を使う場合
-
-専用のファーム `firmware/fpv-lcd-xiao-c5-restouch35-merged.bin` を書く（2.8" 用とは別。ビルドは `-D FPV_PANEL=RESTOUCH35`）。
-画面の配置・操作は 2.8" 版と同じで、480×320 に合わせて拡大し、文字は DejaVu フォントになる。
-
-配線は片面の下駄基板に合わせてあり、**2.8" 版とはピンが違う**（下駄基板のファイルは 2026-11-22 にリポジトリから外した）。
-結線図：[web/wiring/restouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/restouch35.html)（3.5" 静電容量式は [captouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)）。
-下駄基板は Pico と同じ外形・ピン位置（21×51 mm）に XIAO 用の延長（24 mm）を足したもので、基板の Pico 用ソケットにそのまま挿す。
-銅箔は片面（裏）だけで交差なし。信号のある Pico ピンにだけ穴がある。
-
-| 基板の信号（Pico GPIO／ピン番号） | XIAO | GPIO |
-|---|---|---|
-| LCD_DC（GP8／11） | D6 | 11 |
-| LCD_CS（GP9／12） | D5 | 24 |
-| LCD_CLK（GP10／14） | D4 | 23 |
-| MOSI（GP11／15） | D1 | 0 |
-| MISO（GP12／16）タッチのデータ | D0 | 1 |
-| LCD_BL（GP13／17） | D10 | 10 |
-| LCD_RST（GP15／20） | D9 | 9 |
-| TP_CS（GP16／21） | D7 | 12 |
-| GND（28、38） | GND | – |
-| VSYS（39） | 下駄基板の VSYS パッドへ線で（下記） | – |
-| TP_IRQ（GP17）、SD_CS（GP22） | 未接続 | – |
-
-- XIAO は**部品面を上**にして延長部に載せ、USB-C を基板の端に合わせる。Pico 用のピンヘッダ（オス）は裏から立てる。
-- 延長部は Pico の USB 側の外に出る。ResTouch 基板の Pico の向き（USB の側）を基板のシルクで確かめてから挿す。
-- 下の 2 つのピン（20、21）は Pico と同じく基板の端から 0.47 mm の位置にある。
-
-- **電源**：この基板は VSYS（5 V、最大 180 mA）から自前で 3.3 V を作る。下駄基板の **VSYS** パッドに線を 1 本つなぐ。
-  USB 給電だけなら隣の **5V** パッド（XIAO の 5V ピン）から。電池で動かすときは XIAO の 5V ピンに電圧が出ないので、
-  XIAO 裏の **BAT+** から（XIAO を載せる前に線をはんだ付けしておく）。Pico の VSYS も電池をつなぐ前提の端子。
-  ただし電池電圧（3.3〜4.2 V）でこの基板の 3.3 V がどこまで保てるかは未確認。電池が減るとバックライトが暗くなる程度で済むはずだが、
-  表示が乱れるなら電源を見直す。
-- **SD カード**は入れない（SD_CS を使っていないので、カードが MISO を乱すおそれがある）。
-- この基板の液晶は 16 bit パラレルを SPI からシフトレジスタで動かす方式なので、読み出しはできず、1 回の送信は必ず 16 bit 単位
-  （LovyanGFX の `dlen_16bit`、色は RGB565）。SPI は 20 MHz（`FPV_LCD_SPI_HZ`）。ESP32 で 20 MHz を超えると乱れたという報告がある。
-- タッチの校正値は 2.8" 版と別に保存する。初回起動時に校正画面が出る。
-- **実機では未確認**。色が反転していたら `FPV_LCD_INVERT` を false に、表示が乱れるなら `FPV_LCD_SPI_HZ` を 10 MHz に下げる。
-
-## Waveshare 3.5inch Capacitive Touch LCD を使う場合
-
-専用のファーム（ビルドは `-D FPV_PANEL=CAPTOUCH35`、ブラウザからも書き込める）。液晶は ST7796S、タッチは FT6336U（I2C、校正不要）。
+液晶は Waveshare 3.5inch Capacitive Touch LCD（SKU 29318、ST7796S + FT6336U）。タッチは I2C で、校正はしない。
 結線図：[captouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)。
 
 液晶の裏に重ねる本体基板（FFC 版）は `hardware/captouch35_ffc/`（KiCad 8 の基板、`jlcpcb/` にガーバー・BOM・CPL）。
-液晶とは 18 ピン 0.5 mm の FFC でつなぎ、ピンは `fpv_config.h` の `FPV_PANEL_CAPTOUCH35` と同じ。詳しくは同フォルダの README。
+液晶とは 18 ピン 0.5 mm の FFC でつなぐ。詳しくは同フォルダの README。
+
+| 液晶のピン（Interface 2） | XIAO | GPIO |
+|---|---|---|
+| VCC、3V3 | 3V3 | – |
+| GND | GND | – |
+| MISO | 未接続 | – |
+| MOSI | D10 | 10 |
+| SCLK | D9 | 9 |
+| SD_CS | 未接続（TF スロットは空のまま） | – |
+| LCD_CS | D8 | 8 |
+| LCD_DC | D7 | 12 |
+| LCD_RST | D6 | 11 |
+| LCD_BL | D5 | 24 |
+| TP_SDA | D4 | 23 |
+| TP_SCL | D1 | 0 |
+| INT | 未接続（ポーリング） | – |
+| RST（タッチ） | D0 | 1 |
+
+D2/D3（GPIO25/7）はストラップピンなので使っていない。D6/D7（GPIO11/12）は通常の ESP-SDR では UART に使うが、このビルドでは UART を切って液晶に使う。
+ピンや画面の向きは `main/fpv/fpv_config.h` で変えられる（`FPV_LCD_ROTATION` 1 か 3）。
 
 ## PC との接続（USB）
 
@@ -207,7 +168,7 @@ USB をつないで充電すると電圧が上がるので、次の確認（最�
 しきい値は `main/fpv/fpv_config.h` の `FPV_BAT_*` で変えられる（`FPV_BAT_CUTOFF_MV 0` で無効）。
 
 - 測定は掃引の合間に行い、無線の取り込み中には ADC を使わない。
-- シャットダウン中もバックライト・液晶とタッチの CS・液晶 RESET を固定（ホールド）し、分圧回路は切る。
+- シャットダウン中もバックライト・液晶の CS・液晶 RESET を固定（ホールド）し、分圧回路は切る。
   残る消費は ESP32-C5 のディープスリープ、XIAO の 3V3 レギュレータ、スリープ中の液晶。
   それでも電池は少しずつ減るので、シャットダウン後は早めに充電する。
 - 電池保護回路（多くのセルで 2.5〜3.0 V）より上で止めるのが目的。3.30 V は負荷がかかった状態の値で、
@@ -215,14 +176,12 @@ USB をつないで充電すると電圧が上がるので、次の確認（最�
 
 ## 書き込み
 
-ビルド済みの `firmware/fpv-lcd-xiao-c5-merged.bin`（2.8" ILI9341 用）または
-`firmware/fpv-lcd-xiao-c5-restouch35-merged.bin`（3.5" Pico-ResTouch-LCD-3.5 用）を **オフセット 0x0** に書く（8 MB フラッシュ用）。
+ブラウザから書くなら https://zubon2003.github.io/fpv-lcd/ 。
+ファイルで書くなら `web/firmware/fpv-lcd-xiao-c5-captouch35.bin` を **オフセット 0x0** に書く（8 MB フラッシュ用）。
 
 ```
-python -m esptool --chip esp32c5 write-flash 0x0 firmware/fpv-lcd-xiao-c5-merged.bin
+python -m esptool --chip esp32c5 write-flash 0x0 web/firmware/fpv-lcd-xiao-c5-captouch35.bin
 ```
-
-ブラウザなら [ESP Tool](https://espressif.github.io/esptool-js/) で、Flash Address 0x0 に同じファイルを指定する。
 
 ## ビルド
 
@@ -232,13 +191,11 @@ LovyanGFX は同梱していないので、先に取得する（動作確認し�
 ```
 git clone https://github.com/lovyan03/LovyanGFX components/LovyanGFX
 git -C components/LovyanGFX checkout e2cc321
-idf.py -B build-fpv -D FPV_LCD_MONITOR=ON -D SDKCONFIG=build-fpv/sdkconfig \
+idf.py -B build-fpvcap -D FPV_LCD_MONITOR=ON -D SDKCONFIG=build-fpvcap/sdkconfig \
   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32c5;sdkconfig.defaults.fpv-lcd" \
   set-target esp32c5 build
-idf.py -B build-fpv -p PORT flash
+idf.py -B build-fpvcap -p PORT flash
 ```
-
-3.5" 版は別のビルドフォルダで `-D FPV_PANEL=RESTOUCH35` を足す（例 `idf.py -B build-fpv35 -D FPV_LCD_MONITOR=ON -D FPV_PANEL=RESTOUCH35 -D SDKCONFIG=build-fpv35/sdkconfig ...`）。
 
 `-D FPV_LCD_MONITOR=ON` を付けなければ、従来どおりの ESP-SDR（USB で PC 版やブラウザ版を使う）になる。
 
@@ -261,8 +218,7 @@ idf.py -B build-fpv -p PORT flash
   格子はファームと同じ 2112 ビン、値の差 0.005 dB 以内、実測中心の差 0.001 MHz 以内。
   （`tests/fpv_host/check_dsp.py`）。
 - 画面は同じ描画コードを PC で動かして確認（`tests/fpv_host/render_previews.py`）。
-- **実機（XIAO ESP32-C5 + 液晶）ではまだ動かしていない。** 掃引速度（画面上段の sw/s）、
-  PSRAM の認識、タッチの向きは実機で確かめる必要がある。
+- 実機（XIAO ESP32-C5 + 3.5" 静電容量式）で表示・タッチ・掃引を確認済み（2026-10-14〜）。
 
 ## 速度の見積もり
 

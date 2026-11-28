@@ -1,4 +1,4 @@
-/* Stand-alone FPV 5.8 GHz band monitor on an ILI9341 + XPT2046 LCD.
+/* Stand-alone FPV 5.8 GHz band monitor on a 3.5" ST7796S + FT6336U LCD.
  *
  * Two tasks:
  *   receiver (app_main's task): hops the LO over the current span, takes one
@@ -46,33 +46,11 @@ extern "C" {
 namespace fpv {
 
 /* ------------------------------------------------------------------ LCD */
-#if FPV_PANEL_RESTOUCH35
-/* Waveshare Pico-ResTouch-LCD-3.5: an ILI9488 on its 16-bit parallel bus,
- * fed from SPI through shift registers. Every SPI word is 16 bits (commands
- * and parameters too: dlen_16bit), so pixels go as RGB565 - LovyanGFX's
- * ILI9488 would pick 18-bit colour for an SPI bus. Nothing can be read back. */
-struct Panel_ResTouch35 : public lgfx::Panel_ILI9488 {
-    void setColorDepth_impl(lgfx::color_depth_t) override {
-        _write_depth = lgfx::rgb565_2Byte;
-        _read_depth = lgfx::rgb565_2Byte;
-    }
-};
-#endif
 
 class LGFX : public lgfx::LGFX_Device {
-#if FPV_PANEL_RESTOUCH35
-    Panel_ResTouch35 panel_;
-#elif FPV_PANEL_CAPTOUCH35
     lgfx::Panel_ST7796 panel_;
-#else
-    lgfx::Panel_ILI9341 panel_;
-#endif
     lgfx::Bus_SPI bus_;
-#if FPV_PANEL_CAPTOUCH35
     lgfx::Touch_FT5x06 touch_;      /* FT6336U */
-#else
-    lgfx::Touch_XPT2046 touch_;
-#endif
 
 public:
     LGFX() {
@@ -97,15 +75,6 @@ public:
             cfg.pin_cs = FPV_PIN_LCD_CS;
             cfg.pin_rst = FPV_PIN_LCD_RST;
             cfg.pin_busy = -1;
-#if FPV_PANEL_RESTOUCH35
-            cfg.panel_width = 320;
-            cfg.panel_height = 480;
-            cfg.offset_rotation = 0;
-            cfg.readable = false;       /* behind shift registers */
-            cfg.invert = FPV_LCD_INVERT;
-            cfg.rgb_order = false;
-            cfg.dlen_16bit = true;      /* 16-bit words: the parallel bus */
-#elif FPV_PANEL_CAPTOUCH35
             cfg.panel_width = 320;
             cfg.panel_height = 480;
             cfg.offset_rotation = 0;
@@ -113,25 +82,11 @@ public:
             cfg.invert = FPV_LCD_INVERT;
             cfg.rgb_order = false;
             cfg.dlen_16bit = false;
-#else
-            cfg.panel_width = 240;
-            cfg.panel_height = 320;
-            cfg.offset_rotation = 0;
-            cfg.readable = false;       /* LCD SDO is not wired */
-            cfg.invert = false;
-            cfg.rgb_order = false;
-            cfg.dlen_16bit = false;
-#endif
-#if FPV_PANEL_CAPTOUCH35
             cfg.bus_shared = false;     /* the touch is on I2C */
-#else
-            cfg.bus_shared = true;      /* the touch controller shares SPI */
-#endif
             panel_.config(cfg);
         }
         {
             auto cfg = touch_.config();
-#if FPV_PANEL_CAPTOUCH35
             /* reports panel pixels in the panel's own (portrait) frame */
             cfg.x_min = 0;
             cfg.x_max = 319;
@@ -146,21 +101,6 @@ public:
             cfg.freq = FPV_TOUCH_I2C_HZ;
             cfg.pin_sda = FPV_PIN_TOUCH_SDA;
             cfg.pin_scl = FPV_PIN_TOUCH_SCL;
-#else
-            cfg.x_min = 300;
-            cfg.x_max = 3900;
-            cfg.y_min = 200;
-            cfg.y_max = 3700;
-            cfg.pin_int = -1;
-            cfg.bus_shared = true;
-            cfg.offset_rotation = 0;
-            cfg.spi_host = SPI2_HOST;
-            cfg.freq = FPV_TOUCH_SPI_HZ;
-            cfg.pin_sclk = FPV_PIN_SCLK;
-            cfg.pin_mosi = FPV_PIN_MOSI;
-            cfg.pin_miso = FPV_PIN_MISO;
-            cfg.pin_cs = FPV_PIN_TOUCH_CS;
-#endif
             touch_.config(cfg);
             panel_.setTouch(&touch_);
         }
@@ -203,8 +143,8 @@ constexpr uint8_t SINGLE_ON = 0x80;
 static Settings s_set;
 static const char *NVS_NS = "fpvmon";
 
-/* LovyanGFX turns the touch with the panel, and the calibration is in the
- * panel's own frame: one setRotation covers both and costs nothing per frame. */
+/* LovyanGFX turns the touch with the panel: one setRotation covers both and
+ * costs nothing per frame. */
 static int lcd_rotation() { return s_set.rot180 ? (FPV_LCD_ROTATION + 2) & 3 : FPV_LCD_ROTATION; }
 
 static int single_index() { return s_set.single & 0x7f; }
@@ -252,20 +192,15 @@ static void settings_save() {
     nvs_close(h);
 }
 
-static bool touch_cal_load(uint16_t cal[8]) {
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return false;
-    size_t n = 8 * sizeof(uint16_t);
-    bool ok = nvs_get_blob(h, FPV_TCAL_KEY, cal, &n) == ESP_OK && n == 8 * sizeof(uint16_t);
-    nvs_close(h);
-    return ok;
-}
-
-static void touch_cal_save(const uint16_t cal[8]) {
+/* Touch calibration is gone: the touch maps by its config alone. Drop the
+ * values older firmware saved, or a bad one would come back after an update
+ * that does not erase the flash. */
+static void forget_touch_cal() {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_blob(h, FPV_TCAL_KEY, cal, 8 * sizeof(uint16_t));
-    nvs_commit(h);
+    bool any = false;
+    for (const char *k : {"tcal", "tcal35", "tcalcap"}) any |= nvs_erase_key(h, k) == ESP_OK;
+    if (any) nvs_commit(h);
     nvs_close(h);
 }
 
@@ -343,9 +278,6 @@ static RTC_DATA_ATTR bool s_low_sleep;
 
 static const gpio_num_t HELD_PINS[] = {
     (gpio_num_t)FPV_PIN_LCD_CS, (gpio_num_t)FPV_PIN_LCD_RST,
-#if FPV_PIN_TOUCH_CS >= 0
-    (gpio_num_t)FPV_PIN_TOUCH_CS,
-#endif
 #if FPV_PIN_BACKLIGHT >= 0
     (gpio_num_t)FPV_PIN_BACKLIGHT,
 #endif
@@ -365,22 +297,16 @@ static void backlight(bool on) {
 }
 
 /* Deep sleep until the next battery check. The LCD must already be asleep;
- * the backlight and both SPI chip selects are held off while sleeping. */
+ * the backlight, the LCD chip select and reset are held while sleeping. */
 [[noreturn]] static void power_off() {
     backlight(false);
-    /* chip selects and the LCD reset high, so nothing wakes or resets the
-     * panels while the pins would otherwise float */
+    /* the chip select and the LCD reset high, so nothing wakes or resets the
+     * panel while the pins would otherwise float */
     gpio_config_t io = {};
     io.pin_bit_mask = (1ULL << FPV_PIN_LCD_CS) | (1ULL << FPV_PIN_LCD_RST);
-#if FPV_PIN_TOUCH_CS >= 0
-    io.pin_bit_mask |= 1ULL << FPV_PIN_TOUCH_CS;
-#endif
     io.mode = GPIO_MODE_OUTPUT;
     gpio_config(&io);
     gpio_set_level((gpio_num_t)FPV_PIN_LCD_CS, 1);
-#if FPV_PIN_TOUCH_CS >= 0
-    gpio_set_level((gpio_num_t)FPV_PIN_TOUCH_CS, 1);
-#endif
     gpio_set_level((gpio_num_t)FPV_PIN_LCD_RST, 1);
     for (gpio_num_t p : HELD_PINS) gpio_hold_en(p);
     bat_park();
@@ -975,8 +901,6 @@ static void on_hit(Hit hit) {
     }
 }
 
-static void calibrate_touch();
-
 /* ---------------------------------------------------------- setup screen */
 static Settings s_edit;          /* what the setup screen shows / edits */
 
@@ -1004,7 +928,6 @@ static bool on_setup_hit(SetupHit h) {
         break;
     case SH_SNR_DOWN: if (s_edit.snr > FPV_SNR_MIN_DB) s_edit.snr--; break;
     case SH_SNR_UP: if (s_edit.snr < FPV_SNR_MAX_DB) s_edit.snr++; break;
-    case SH_CAL: calibrate_touch(); break;
     case SH_ROTATE:             /* at once (and saved), so the next press lands where it is drawn */
         s_edit.rot180 = s_set.rot180 = !s_set.rot180;
         settings_save();
@@ -1112,18 +1035,6 @@ static void measure_and_level() {
     s_view.have_data = true;
 }
 
-static void calibrate_touch() {
-    uint16_t cal[8];
-    s_lcd.fillScreen(TFT_BLACK);
-    s_lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    s_lcd.setFont(&fonts::Font2);
-    s_lcd.setTextDatum(textdatum_t::middle_center);
-    s_lcd.drawString("Touch the arrow tips", SCR_W / 2, SCR_H / 2 - 10);
-    s_lcd.drawString("(touch calibration)", SCR_W / 2, SCR_H / 2 + 10);
-    s_lcd.calibrateTouch(cal, TFT_WHITE, TFT_BLACK, 15);
-    touch_cal_save(cal);
-}
-
 /* Settings sent over USB ("FPV MODE/CH/GAIN/SNR/SPAN"). True if any. */
 static bool apply_pc_commands() {
     fpv_cmd_t c;
@@ -1187,46 +1098,15 @@ static void ui_task(void *) {
     s_lcd.setRotation(lcd_rotation());
     s_lcd.fillScreen(TFT_BLACK);
 
-    /* Splash; holding the screen during it recalibrates the touch. */
-    const int logo_y = (SCR_H - LOGO_H - 44) / 2, text_y = logo_y + LOGO_H + 24;
+    /* Splash */
+    const int logo_y = (SCR_H - LOGO_H - 24) / 2, text_y = logo_y + LOGO_H + 24;
     draw_logo(s_lcd, (SCR_W - LOGO_W) / 2, logo_y);
     s_lcd.setFont(&fonts::Font2);
     s_lcd.setTextColor(TFT_WHITE, TFT_BLACK);
     s_lcd.setTextDatum(textdatum_t::middle_center);
-    s_lcd.drawString("FPV band monitor  ESP32-C5", SCR_W / 2, text_y - 10);
-    s_lcd.setTextColor(0x8C71u, TFT_BLACK);
-    s_lcd.drawString("hold the screen to calibrate touch", SCR_W / 2, text_y + 10);
-    uint16_t cal[8];
-    bool have_cal = touch_cal_load(cal);
-    if (have_cal) s_lcd.setTouchCalibrate(cal);
-    bool held = true;
-    for (int i = 0; i < 30; i++) {
-        int32_t x, y;
-        if (!s_lcd.getTouch(&x, &y)) held = false;
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-    if (held) {
-        calibrate_touch();
-    } else if (!have_cal && FPV_TOUCH_CAL_FIRST_BOOT) {
-        /* First boot: calibrate, but do not hang on a board whose touch is
-         * not wired - start with the built-in defaults after 10 s. */
-        s_lcd.fillScreen(TFT_BLACK);
-        s_lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-        s_lcd.drawString("Touch the screen to calibrate", SCR_W / 2, SCR_H / 2 - 10);
-        s_lcd.setTextColor(0x8C71u, TFT_BLACK);
-        s_lcd.drawString("(skipped in 10 s)", SCR_W / 2, SCR_H / 2 + 12);
-        bool touched = false;
-        for (int i = 0; i < 200 && !touched; i++) {
-            int32_t x, y;
-            touched = s_lcd.getTouch(&x, &y);
-            vTaskDelay(pdMS_TO_TICKS(50));
-        }
-        if (touched) {
-            int32_t rx, ry;
-            while (s_lcd.getTouch(&rx, &ry)) vTaskDelay(pdMS_TO_TICKS(20));  /* wait for release */
-            calibrate_touch();
-        }
-    }
+    s_lcd.drawString("FPV band monitor  ESP32-C5", SCR_W / 2, text_y);
+    forget_touch_cal();
+    vTaskDelay(pdMS_TO_TICKS(1500));
 
     if (!s_ui.begin(&s_lcd, s_have_psram)) {
         s_lcd.fillScreen(TFT_BLACK);

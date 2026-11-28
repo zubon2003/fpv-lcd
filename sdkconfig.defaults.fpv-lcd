@@ -1,5 +1,5 @@
-# Stand-alone FPV band monitor: XIAO ESP32-C5 (8 MB flash) + ILI9341/XPT2046.
-# Build: idf.py -B build-fpv -D FPV_LCD_MONITOR=ON -D SDKCONFIG=build-fpv/sdkconfig \
+# Stand-alone FPV band monitor: XIAO ESP32-C5 (8 MB flash) + Waveshare 3.5" capacitive LCD.
+# Build: idf.py -B build-fpvcap -D FPV_LCD_MONITOR=ON -D SDKCONFIG=build-fpvcap/sdkconfig \
 #   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32c5;sdkconfig.defaults.fpv-lcd" \
 #   set-target esp32c5 build
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y

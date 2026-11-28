@@ -1,8 +1,6 @@
-/* Screen layout and drawing: 320 x 240 landscape (2.8" ILI9341), or 480 x 320
- * with FPV_PANEL_RESTOUCH35 (Waveshare Pico-ResTouch-LCD-3.5, ILI9488) or
- * FPV_PANEL_CAPTOUCH35 (Waveshare 3.5inch Capacitive Touch LCD, ST7796S): the
- * same layout, scaled. Depends only on LovyanGFX sprites, so the same code
- * renders on the PC for previews. */
+/* Screen layout and drawing: 480 x 320 landscape (Waveshare 3.5inch
+ * Capacitive Touch LCD, ST7796S). Depends only on LovyanGFX sprites, so the
+ * same code renders on the PC for previews. */
 #pragma once
 #include <stdint.h>
 #include "analysis.h"
@@ -11,21 +9,10 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 
-#if FPV_PANEL_RESTOUCH35 || FPV_PANEL_CAPTOUCH35
-#define FPV_SCREEN_480 1
-#else
-#define FPV_SCREEN_480 0
-#endif
-
 namespace fpv {
 
-#if FPV_SCREEN_480
 constexpr int SCR_W = 480, SCR_H = 320;
 constexpr int HDR_H = 22, SPEC_H = 140, AXIS_H = 14, WF_H = 64, RO_H = 80;
-#else
-constexpr int SCR_W = 320, SCR_H = 240;
-constexpr int HDR_H = 16, SPEC_H = 104, AXIS_H = 10, WF_H = 48, RO_H = 62;
-#endif
 constexpr int HDR_Y = 0;
 constexpr int SPEC_Y = HDR_Y + HDR_H;
 constexpr int AXIS_Y = SPEC_Y + SPEC_H;
@@ -103,7 +90,7 @@ struct SetupView {
     bool rot180;               /* screen and touch turned upside down */
 };
 enum SetupHit : uint8_t {
-    SH_NONE = 0, SH_DONE, SH_CAL, SH_ROTATE, SH_GAIN_DOWN, SH_GAIN_UP, SH_SNR_DOWN, SH_SNR_UP,
+    SH_NONE = 0, SH_DONE, SH_ROTATE, SH_GAIN_DOWN, SH_GAIN_UP, SH_SNR_DOWN, SH_SNR_UP,
 };
 SetupHit setup_hit(int x, int y);
 /* buttons that repeat while held */

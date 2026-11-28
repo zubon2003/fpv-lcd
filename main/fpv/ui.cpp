@@ -8,8 +8,8 @@
 
 namespace fpv {
 
-/* Scale of the 320 x 240 layout: SX horizontal, SY vertical; fonts by role. */
-#if FPV_SCREEN_480
+/* The layout is drawn in 320 x 240 units and scaled to the 480 x 320 screen:
+ * SX horizontal, SY vertical; fonts by role. */
 static constexpr int SX(int v) { return v * 3 / 2; }
 static constexpr int SY(int v) { return v * 4 / 3; }
 #define F_XS (&fonts::DejaVu9)
@@ -17,15 +17,6 @@ static constexpr int SY(int v) { return v * 4 / 3; }
 #define F_M (&fonts::DejaVu18)
 #define F_L (&fonts::DejaVu24)
 #define F_XL (&fonts::DejaVu40)
-#else
-static constexpr int SX(int v) { return v; }
-static constexpr int SY(int v) { return v; }
-#define F_XS (&fonts::Font0)
-#define F_S (&fonts::Font0)
-#define F_M (&fonts::Font2)
-#define F_L (&fonts::Font4)
-#define F_XL (&fonts::Font4)
-#endif
 
 /* ---------------------------------------------------------------- colours */
 /* UI palette (spectrum, header, axis, readouts): index -> RGB. */
@@ -157,14 +148,13 @@ Hit hit_test(const UiView &v, int x, int y) {
 /* Setup layout: title row, then GAIN / DETECT / INFO / SCREEN rows. */
 constexpr int SU_TITLE_H = SY(40), SU_ROW_Y = SY(44), SU_ROW_PITCH = SY(49), SU_ROW_H = SY(45);
 constexpr int SU_COL0 = SX(62), SU_STEP_W = SX(64);
-constexpr int SU_CAL_X1 = SU_COL0 + SX(120), SU_DONE_X0 = SX(226);
-constexpr int SU_ROT_X0 = SU_CAL_X1 + SX(10);   /* ROTATE 180, right of CALIBRATE */
+constexpr int SU_ROT_X1 = SU_COL0 + SX(128), SU_DONE_X0 = SX(226);   /* ROTATE 180 */
 
 SetupHit setup_hit(int x, int y) {
     if (y < SU_TITLE_H) return x >= SU_DONE_X0 ? SH_DONE : SH_NONE;
     int row = (y - SU_ROW_Y + 2) / SU_ROW_PITCH;
     if (y < SU_ROW_Y - 2 || row > 3 || x < SU_COL0 - 2) return SH_NONE;
-    if (row == 3) return x < SU_CAL_X1 ? SH_CAL : x >= SU_ROT_X0 - SX(4) ? SH_ROTATE : SH_NONE;
+    if (row == 3) return x < SU_ROT_X1 + SX(4) ? SH_ROTATE : SH_NONE;
     if (row == 2) return SH_NONE;
     bool left = x < SU_COL0 + SU_STEP_W + SX(4), right = x >= SCR_W - SU_STEP_W - SX(4);
     if (!left && !right) return SH_NONE;
@@ -510,11 +500,7 @@ void Renderer::readout_box(const UiView &v, const UiChannel &c, int x, int w) {
         s.setFont(F_XS);
         s.setTextDatum(textdatum_t::bottom_left);
         s.setTextColor(C_AXIS);
-#if FPV_SCREEN_480
         snprintf(b, sizeof(b), "%.2f", c.smoothed);
-#else
-        snprintf(b, sizeof(b), "%.1f", c.smoothed);
-#endif
         s.drawString(b, x + SX(5), RO_H - SY(5));
     } else {
         s.setFont(F_M);
@@ -529,11 +515,7 @@ void Renderer::readout_box(const UiView &v, const UiChannel &c, int x, int w) {
         s.setFont(F_XS);
         s.setTextDatum(textdatum_t::bottom_right);
         s.setTextColor(live ? C_TEXT : C_DIM);
-#if FPV_SCREEN_480
         snprintf(b, sizeof(b), "%.0fdBFS", c.m.peak_db);
-#else
-        snprintf(b, sizeof(b), "%.0fdB", c.m.peak_db);
-#endif
         s.drawString(b, x + w - SX(5), RO_H - SY(5));
     }
 }
@@ -702,12 +684,11 @@ void Renderer::draw_setup(const SetupView &sv) {
         }
         d.drawString(b, SU_COL0, y0 + SY(24));
     }
-    /* SCREEN: touch calibration, upside down */
+    /* SCREEN: upside down */
     label(3, "SCREEN");
     {
         int y0 = SU_ROW_Y + 3 * SU_ROW_PITCH;
-        box(SU_COL0, y0, SU_CAL_X1, y0 + SU_ROW_H, "CALIBRATE", false, F_M);
-        box(SU_ROT_X0, y0, SCR_W - 1, y0 + SU_ROW_H, "ROTATE 180", sv.rot180, F_M);
+        box(SU_COL0, y0, SU_ROT_X1, y0 + SU_ROW_H, "ROTATE 180", sv.rot180, F_M);
     }
     d.endWrite();
 }

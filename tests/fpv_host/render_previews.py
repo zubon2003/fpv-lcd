@@ -3,8 +3,7 @@ drawing code, run on the PC) into PNG files.
 
     python3 render_previews.py /path/to/fpv-band-monitor-c5 [out_dir]
 
-Both builds: screen_*.png (2.8" ILI9341, 320 x 240) and screen35_*.png
-(3.5" Pico-ResTouch-LCD-3.5, 480 x 320).
+screen35_*.png (3.5" capacitive, 480 x 320).
 """
 import subprocess
 import sys
@@ -28,7 +27,7 @@ SCENES = [
 
 
 def main():
-    subprocess.run(["make", "-s", "-C", str(HERE), "host_dsp", "host_ui", "host_ui35"], check=True)
+    subprocess.run(["make", "-s", "-C", str(HERE), "host_dsp", "host_ui"], check=True)
     OUT.mkdir(exist_ok=True)
     for mode, name, chans, carriers in SCENES:
         freqs = [cd.parse_channels(c)[0].freq_mhz for c in chans]
@@ -37,7 +36,7 @@ def main():
         words = [cd.capture(lo, carriers)[0] for lo in st.los]
         (HERE / "iq.bin").write_bytes(np.concatenate(words).tobytes())
         cd.run("sweep", "iq.bin", cd.N, start, stop, 25, 28.0, 500.0, *[int(f) for f in freqs])
-        for exe, tag in (("host_ui", "screen"), ("host_ui35", "screen35")):
+        for exe, tag in (("host_ui", "screen35"),):
             ppm = HERE / f"{name}.ppm"
             r = subprocess.run([str(HERE / exe), str(mode), "sweep.bin", str(start), str(stop),
                                 str(ppm), "1" if mode == 2 else "0", *chans],

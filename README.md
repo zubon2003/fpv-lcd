@@ -91,7 +91,7 @@ XIAO は秋月の分割ロングピンソケット（105779）で基板に付け
 | M2 六角スペーサー 6 mm × 2、M2 ねじ | BT2.0 のサブ基板（M2 穴 2 つ）の固定 |
 | ケース | 寸法を確かめて自分で設計するのがおすすめ（STL は参考） |
 
-ピン配置は `main/fpv/fpv_config.h` の `FPV_PANEL_CAPTOUCH35` と同じで、基板を使えば配線は不要です。
+ピン配置は `main/fpv/fpv_config.h` のとおりで、基板を使えば配線は不要です。
 ジャンパ線でつなぐ場合の結線図：[captouch35.html](https://zubon2003.github.io/fpv-lcd/wiring/captouch35.html)。
 
 ## もっと詳しく
@@ -109,7 +109,7 @@ ESP-IDF（ESP-SDR が固定している版、`firmware-targets.json` の esp32c5
 ```
 git clone https://github.com/lovyan03/LovyanGFX components/LovyanGFX
 git -C components/LovyanGFX checkout e2cc321
-idf.py -B build-fpvcap -D FPV_LCD_MONITOR=ON -D FPV_PANEL=CAPTOUCH35 -D SDKCONFIG=build-fpvcap/sdkconfig \
+idf.py -B build-fpvcap -D FPV_LCD_MONITOR=ON -D SDKCONFIG=build-fpvcap/sdkconfig \
   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32c5;sdkconfig.defaults.fpv-lcd" \
   set-target esp32c5 build
 ```

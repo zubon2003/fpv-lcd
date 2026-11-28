@@ -62,7 +62,7 @@ if(IDF_TARGET STREQUAL "esp32c61" OR IDF_TARGET STREQUAL "esp32s31")
     list(APPEND sources "common/burst_gain_table.c")
 endif()
 
-# Stand-alone LCD band monitor (main/fpv): ESP32-C5 + ILI9341/XPT2046.
+# Stand-alone LCD band monitor (main/fpv): ESP32-C5 + Waveshare 3.5" capacitive LCD.
 # A build property, not a Kconfig option: requirements are collected before
 # sdkconfig is loaded, and the monitor adds LovyanGFX to them.
 idf_build_get_property(fpv_lcd FPV_LCD_MONITOR)
@@ -85,14 +85,6 @@ idf_component_register(SRCS "${receiver}" ${sources}
     REQUIRES ${dependencies})
 if(fpv_lcd)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE FPV_LCD_MONITOR=1)
-    idf_build_get_property(fpv_panel FPV_PANEL)
-    if(fpv_panel STREQUAL "RESTOUCH35")
-        target_compile_definitions(${COMPONENT_LIB} PRIVATE FPV_PANEL_RESTOUCH35=1)
-    elseif(fpv_panel STREQUAL "CAPTOUCH35")
-        target_compile_definitions(${COMPONENT_LIB} PRIVATE FPV_PANEL_CAPTOUCH35=1)
-    elseif(NOT fpv_panel STREQUAL "ILI9341")
-        message(FATAL_ERROR "FPV_PANEL must be ILI9341, RESTOUCH35 or CAPTOUCH35 (got '${fpv_panel}')")
-    endif()
     idf_build_get_property(fpv_calprobe FPV_CALPROBE)
     if(fpv_calprobe)
         target_compile_definitions(${COMPONENT_LIB} PRIVATE FPV_CALPROBE=1)
